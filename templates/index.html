@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Unitra — Test Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Unitra</h1>
+    <p>Paste your Python code — get pytest tests instantly.</p>
+
+    <textarea id="code" placeholder="def add(a, b): return a + b"></textarea>
+    <br>
+    <button onclick="generate()">Generate Tests</button>
+    <button onclick="openFile()">Open .py File</button>
+
+    <div id="meta"></div>
+    <div id="output"></div>
+
+    <script src="/static/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.venv
+.idea
+.pytest_cache
+src/__pycache__
+tests/__pycache__
+.claude
