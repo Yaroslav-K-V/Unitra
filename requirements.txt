@@ -1,2 +1,5 @@
 Flask
 pytest
+pywebview
+pythonnet
+cefpython3

@@ -17,7 +17,10 @@ def index():
 def generate():
     data = request.get_json()
     source_code = data.get("code", "")
-    functions = parse_functions(source_code)
+    try:
+        functions = parse_functions(source_code)
+    except SyntaxError as e:
+        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
     test_code = generate_test_module(functions)
     return jsonify({
         "test_code": test_code,

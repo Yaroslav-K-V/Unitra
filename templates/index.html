@@ -3,19 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <title>Unitra — Test Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>Unitra</h1>
-    <p>Paste your Python code — get pytest tests instantly.</p>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <circle cx="14" cy="14" r="14" fill="#d97757"/>
+                    <path d="M8 14 L14 8 L20 14 L14 20 Z" fill="white"/>
+                </svg>
+                <span class="logo-text">Unitra</span>
+            </div>
+            <p class="subtitle">Python test generator powered by AST analysis</p>
+        </header>
 
-    <textarea id="code" placeholder="def add(a, b): return a + b"></textarea>
-    <br>
-    <button onclick="generate()">Generate Tests</button>
-    <button onclick="openFile()">Open .py File</button>
+        <main>
+            <div class="input-section">
+                <label class="section-label">Your Python code</label>
+                <textarea id="code" placeholder="def add(a, b):&#10;    return a + b"></textarea>
+                <div class="actions">
+                    <button class="btn-primary" onclick="generate()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M3 8L6.5 11.5L13 5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Generate Tests
+                    </button>
+                    <button class="btn-secondary" onclick="openFile()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6.5L8 5H12.5C13.33 5 14 5.67 14 6.5V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                        </svg>
+                        Open .py File
+                    </button>
+                </div>
+            </div>
 
-    <div id="meta"></div>
-    <div id="output"></div>
+            <div id="result-section" class="result-section hidden">
+                <div class="result-header">
+                    <label class="section-label">Generated tests</label>
+                    <span id="meta" class="meta-badge"></span>
+                </div>
+                <div id="output" class="output"></div>
+            </div>
+        </main>
+    </div>
 
     <script src="/static/main.js"></script>
 </body>

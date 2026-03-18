@@ -4,7 +4,7 @@ import webview
 class Api:
     def open_file(self):
         result = webview.windows[0].create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             file_types=("Python files (*.py)", "All files (*.*)")
         )
         if not result:
