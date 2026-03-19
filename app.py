@@ -1,13 +1,19 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 from src.parser import parse_functions
 from src.generator import generate_test_module
 from src.api import Api
 from src.recent import add_recent, get_recent
 import threading
+import time
 import os
 import webview
 
 app = Flask(__name__)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_file(os.path.join(os.path.dirname(__file__), 'static', 'favicon', 'favicon.ico'))
 
 
 @app.route('/')
@@ -16,7 +22,7 @@ def home():
 
 @app.route('/quick')
 def quick():
-    return render_template('index.html')
+    return render_template('quick.html')
 
 @app.route('/project')
 def project():
@@ -152,5 +158,6 @@ if __name__ == '__main__':
     t = threading.Thread(target=lambda: app.run(port=5000, use_reloader=False))
     t.daemon = True
     t.start()
+    time.sleep(1)
     webview.create_window("Unitra", "http://127.0.0.1:5000", js_api=api, width=1000, height=700)
-    webview.start()
+    webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", "favicon.ico"))

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <defs>
+    <filter id="goo">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo" />
+      <feBlend in="SourceGraphic" in2="goo" />
+    </filter>
+  </defs>
+  <g filter="url(#goo)">
+    <ellipse cx="216.5" cy="223" rx="114.5" ry="111" fill="#9370DB" opacity="0.8"/>
+    <ellipse cx="270" cy="188.5" rx="100" ry="94.5" fill="#BA55D3" opacity="0.8"/>
+    <ellipse cx="337" cy="275.5" rx="102" ry="101.5" fill="#FFA500" opacity="0.8"/>
+    <ellipse cx="261" cy="336.5" rx="102" ry="101.5" fill="#9370DB" opacity="0.8"/>
+    <ellipse cx="210" cy="289.5" rx="72" ry="71.5" fill="#FFD700" opacity="0.8"/>
+    <ellipse cx="266.5" cy="281.5" rx="91.5" ry="87.5" fill="#D2691E" opacity="0.8"/>
+    <ellipse cx="216.5" cy="120.5" rx="35.5" ry="34.5" fill="#F0E68C" opacity="0.8"/>
+  </g>
+</svg>

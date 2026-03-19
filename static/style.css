@@ -31,15 +31,15 @@ header {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    width: fit-content;
 }
 
-.logo-text {
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: #1a1a1a;
-    letter-spacing: -0.02em;
-}
+.logo:hover { transform: scale(1.05); }
+.logo:active { transform: scale(0.95) rotate(-3deg); }
+
 
 .subtitle {
     font-size: 14px;
