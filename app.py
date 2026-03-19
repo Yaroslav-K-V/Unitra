@@ -2,15 +2,29 @@ from flask import Flask, jsonify, render_template, request
 from src.parser import parse_functions
 from src.generator import generate_test_module
 from src.api import Api
+from src.recent import add_recent, get_recent
 import threading
+import os
 import webview
 
 app = Flask(__name__)
 
 
 @app.route('/')
-def index():
+def home():
+    return render_template('home.html')
+
+@app.route('/quick')
+def quick():
     return render_template('index.html')
+
+@app.route('/project')
+def project():
+    return render_template('project.html')
+
+@app.route('/ai')
+def ai():
+    return render_template('ai.html')
 
 
 @app.route('/generate', methods=['POST'])
@@ -24,6 +38,111 @@ def generate():
     test_code = generate_test_module(functions)
     return jsonify({
         "test_code": test_code,
+        "functions_found": len(functions)
+    })
+
+
+@app.route('/generate-files', methods=['POST'])
+def generate_files():
+    paths = request.get_json().get("paths", [])
+    parts = []
+    for path in paths:
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
+    source = "\n\n".join(parts)
+    try:
+        functions = parse_functions(source)
+    except SyntaxError as e:
+        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
+    return jsonify({
+        "test_code": generate_test_module(functions),
+        "functions_found": len(functions),
+        "files_scanned": len(parts)
+    })
+
+
+@app.route('/generate-project', methods=['POST'])
+def generate_project():
+    folder = request.get_json().get("folder", "")
+    if not os.path.isdir(folder):
+        return jsonify({"error": "Invalid folder path"}), 400
+
+    all_code = []
+    files_scanned = 0
+    for root, _, files in os.walk(folder):
+        for fname in files:
+            if fname.endswith(".py"):
+                with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
+                    all_code.append(f"# --- {fname} ---\n" + f.read())
+                files_scanned += 1
+
+    source = "\n\n".join(all_code)
+    try:
+        functions = parse_functions(source)
+    except SyntaxError as e:
+        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
+
+    test_code = generate_test_module(functions)
+    return jsonify({
+        "test_code": test_code,
+        "functions_found": len(functions),
+        "files_scanned": files_scanned
+    })
+
+
+@app.route('/recent', methods=['GET'])
+def recent():
+    return jsonify(get_recent())
+
+@app.route('/recent/add', methods=['POST'])
+def recent_add():
+    path = request.get_json().get("path", "")
+    if path:
+        add_recent(path)
+    return jsonify({"ok": True})
+
+@app.route('/generate-ai', methods=['POST'])
+def generate_ai():
+    data = request.get_json()
+    source_code = ""
+
+    if "code" in data:
+        source_code = data["code"]
+    elif "paths" in data:
+        parts = []
+        for path in data["paths"]:
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8", errors="ignore") as f:
+                    parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
+        source_code = "\n\n".join(parts)
+    elif "file" in data:
+        path = data["file"]
+        if not os.path.isfile(path):
+            return jsonify({"error": "File not found"}), 400
+        with open(path, encoding="utf-8") as f:
+            source_code = f.read()
+    elif "folder" in data:
+        folder = data["folder"]
+        if not os.path.isdir(folder):
+            return jsonify({"error": "Folder not found"}), 400
+        parts = []
+        for root, _, files in os.walk(folder):
+            for fname in files:
+                if fname.endswith(".py"):
+                    with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
+                        parts.append(f"# --- {fname} ---\n" + f.read())
+        source_code = "\n\n".join(parts)
+
+    try:
+        functions = parse_functions(source_code)
+    except SyntaxError as e:
+        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
+
+    test_code = generate_test_module(functions)
+    return jsonify({
+        "test_code": test_code + "\n# TODO: AI enhancement coming soon",
         "functions_found": len(functions)
     })
 

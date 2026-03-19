@@ -1,0 +1,63 @@
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("code").addEventListener("keydown", function (e) {
+        if (e.key === "Tab") {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 4;
+        }
+    });
+});
+
+async function pickFiles() {
+    const data = await pywebview.api.open_files();
+    if (!data) return;
+    if (data.paths.length === 1) {
+        document.getElementById("code").value = data.code;
+    } else {
+        const res = await fetch("/generate-ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paths: data.paths })
+        });
+        renderResult(await res.json());
+    }
+}
+
+async function pickFolder() {
+    const folder = await pywebview.api.open_folder();
+    if (!folder) return;
+    const res = await fetch("/generate-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder })
+    });
+    renderResult(await res.json());
+}
+
+async function generateAI() {
+    const res = await fetch("/generate-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: document.getElementById("code").value })
+    });
+    renderResult(await res.json());
+}
+
+function renderResult(data) {
+    const section = document.getElementById("result-section");
+    const output = document.getElementById("output");
+    section.classList.remove("hidden");
+
+    if (data.error) {
+        output.textContent = data.error;
+        output.classList.add("error");
+        document.getElementById("meta").textContent = "";
+        return;
+    }
+
+    output.classList.remove("error");
+    output.textContent = data.test_code;
+    document.getElementById("meta").textContent = `${data.functions_found} function(s) found`;
+}

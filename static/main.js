@@ -1,17 +1,28 @@
-document.getElementById("code").addEventListener("keydown", function (e) {
-    if (e.key === "Tab") {
-        e.preventDefault();
-        const start = this.selectionStart;
-        const end = this.selectionEnd;
-        this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
-        this.selectionStart = this.selectionEnd = start + 4;
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("code").addEventListener("keydown", function (e) {
+        if (e.key === "Tab") {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+            this.selectionStart = this.selectionEnd = start + 4;
+        }
+    });
+
+    // Preload code if navigated from recent files
+    const preload = sessionStorage.getItem("preload_code");
+    if (preload) {
+        document.getElementById("code").value = preload;
+        sessionStorage.removeItem("preload_code");
+        sessionStorage.removeItem("preload_path");
+        generate();
     }
 });
 
 async function openFile() {
-    const code = await pywebview.api.open_file();
-    if (code) {
-        document.getElementById("code").value = code;
+    const data = await pywebview.api.open_file();
+    if (data) {
+        document.getElementById("code").value = data.code;
         await generate();
     }
 }
