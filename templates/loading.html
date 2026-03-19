@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Unitra</title>
+    <script src="/static/scripts/gsap.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #f5f0e8;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        .logo-container {
+            width: 220px;
+            height: 220px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        .app-name {
+            margin-top: 20px;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: -0.02em;
+        }
+
+        .loading-dots {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #9a9390;
+        }
+
+        .dot {
+            display: inline-block;
+            animation: blink 1.2s infinite;
+        }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes blink {
+            0%, 80%, 100% { opacity: 0.2; }
+            40% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="logo-container" id="logoWrapper">
+    <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <filter id="goo-effect">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="4" id="gooBlur"/>
+                <feColorMatrix in="gooBlur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo"/>
+            </filter>
+        </defs>
+        <g filter="url(#goo-effect)" id="mainGroup">
+            <ellipse class="logo-element" cx="216.5" cy="223" rx="114.5" ry="111" fill="#9370DB" opacity="0.8"/>
+            <ellipse class="logo-element" cx="270" cy="188.5" rx="100" ry="94.5" fill="#BA55D3" opacity="0.8"/>
+            <ellipse class="logo-element" cx="337" cy="275.5" rx="102" ry="101.5" fill="#FFA500" opacity="0.8"/>
+            <ellipse class="logo-element" cx="261" cy="336.5" rx="102" ry="101.5" fill="#9370DB" opacity="0.8"/>
+            <ellipse class="logo-element" cx="210" cy="289.5" rx="72" ry="71.5" fill="#FFD700" opacity="0.8"/>
+            <ellipse class="logo-element" cx="266.5" cy="281.5" rx="91.5" ry="87.5" fill="#D2691E" opacity="0.8"/>
+            <ellipse class="logo-element" cx="216.5" cy="120.5" rx="35.5" ry="34.5" fill="#F0E68C" opacity="0.8"/>
+        </g>
+    </svg>
+</div>
+
+<div class="app-name">Unitra</div>
+<div class="loading-dots">
+    <span class="dot">●</span>
+    <span class="dot">●</span>
+    <span class="dot">●</span>
+</div>
+
+<script>
+const wrapper = document.getElementById('logoWrapper');
+const blurFilter = document.getElementById('gooBlur');
+const elements = document.querySelectorAll('.logo-element');
+
+const startData = Array.from(elements).map(el => ({
+    cx: parseFloat(el.getAttribute('cx')),
+    cy: parseFloat(el.getAttribute('cy'))
+}));
+
+const centerX = 250;
+const centerY = 250;
+const triggerDistance = 300;
+let isActive = false;
+let mousePos = { x: -1000, y: -1000 };
+
+const updateFrame = () => {
+    if (isActive) return;
+
+    const rect = wrapper.getBoundingClientRect();
+    const logoCenterX = rect.left + rect.width / 2;
+    const logoCenterY = rect.top + rect.height / 2;
+
+    const distance = Math.sqrt(
+        Math.pow(mousePos.x - logoCenterX, 2) +
+        Math.pow(mousePos.y - logoCenterY, 2)
+    );
+
+    if (distance < triggerDistance) {
+        const power = Math.pow(1 - (distance / triggerDistance), 1.5);
+        const mouseOffset = 45;
+        const targetX = centerX + (mousePos.x - logoCenterX) * (power * (mouseOffset / triggerDistance));
+        const targetY = centerY + (mousePos.y - logoCenterY) * (power * (mouseOffset / triggerDistance));
+
+        gsap.to(blurFilter, { attr: { stdDeviation: power * 12 }, duration: 0.4, overwrite: "auto" });
+
+        elements.forEach((el, i) => {
+            const destX = startData[i].cx + (targetX - startData[i].cx) * power;
+            const destY = startData[i].cy + (targetY - startData[i].cy) * power;
+            gsap.to(el, { attr: { cx: destX, cy: destY }, duration: 0.5, ease: "power2.out", overwrite: "auto" });
+        });
+    } else {
+        gsap.to(blurFilter, { attr: { stdDeviation: 0 }, duration: 0.6, overwrite: "auto" });
+        elements.forEach((el, i) => {
+            gsap.to(el, { attr: { cx: startData[i].cx, cy: startData[i].cy }, duration: 0.8, ease: "elastic.out(1, 0.7)", overwrite: "auto" });
+        });
+    }
+};
+
+window.addEventListener('mousemove', (e) => {
+    mousePos.x = e.clientX;
+    mousePos.y = e.clientY;
+    updateFrame();
+});
+
+wrapper.addEventListener('mousedown', () => {
+    isActive = true;
+    gsap.to(blurFilter, { attr: { stdDeviation: 18 }, duration: 0.2, overwrite: "auto" });
+    elements.forEach(el => {
+        gsap.to(el, { attr: { cx: centerX, cy: centerY }, duration: 0.4, ease: "back.out(1.5)", overwrite: "auto" });
+    });
+});
+
+wrapper.addEventListener('mouseup', () => {
+    isActive = false;
+    updateFrame();
+});
+
+wrapper.addEventListener('mouseleave', () => {
+    mousePos = { x: -1000, y: -1000 };
+    updateFrame();
+});
+
+// Poll Flask until ready
+</script>
+</body>
+</html>

@@ -11,6 +11,16 @@ import webview
 app = Flask(__name__)
 
 
+@app.route('/health')
+def health():
+    return jsonify({"ok": True})
+
+
+@app.route('/loading')
+def loading():
+    return render_template('loading.html')
+
+
 @app.route('/favicon.ico')
 def favicon():
     return send_file(os.path.join(os.path.dirname(__file__), 'static', 'favicon', 'favicon.ico'))
@@ -154,10 +164,30 @@ def generate_ai():
 
 
 if __name__ == '__main__':
+    import urllib.request
     api = Api()
-    t = threading.Thread(target=lambda: app.run(port=5000, use_reloader=False))
-    t.daemon = True
-    t.start()
-    time.sleep(1)
-    webview.create_window("Unitra", "http://127.0.0.1:5000", js_api=api, width=1000, height=700)
+
+    flask_thread = threading.Thread(target=lambda: app.run(port=5000, use_reloader=False))
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    gsap_js = open(os.path.join(os.path.dirname(__file__), "static", "scripts", "gsap.min.js"), encoding="utf-8").read()
+    loading_html = open(os.path.join(os.path.dirname(__file__), "templates", "loading.html"), encoding="utf-8").read()
+    loading_html = loading_html.replace('<script src="/static/scripts/gsap.min.js"></script>', f'<script>{gsap_js}</script>')
+
+    def wait_and_navigate():
+        while True:
+            try:
+                urllib.request.urlopen("http://127.0.0.1:5000/health")
+                time.sleep(1.5)
+                webview.windows[0].load_url("http://127.0.0.1:5000")
+                break
+            except:
+                time.sleep(0.2)
+
+    nav_thread = threading.Thread(target=wait_and_navigate)
+    nav_thread.daemon = True
+    nav_thread.start()
+
+    webview.create_window("Unitra", html=loading_html, js_api=api, width=1000, height=700, background_color="#f5f0e8")
     webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", "favicon.ico"))

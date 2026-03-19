@@ -44,9 +44,24 @@ async function generate() {
     section.classList.remove("hidden");
 
     if (data.error) {
-        output.textContent = data.error;
         output.classList.add("error");
         meta.textContent = "";
+
+        const match = data.error.match(/line (\d+)/);
+        if (match) {
+            const errLine = parseInt(match[1]);
+            const lines = code.split("\n");
+            const formatted = lines.map((l, i) => {
+                const n = i + 1;
+                const prefix = n === errLine ? "→ " : "  ";
+                const num = String(n).padStart(3, " ");
+                const suffix = n === errLine ? `    ← ${data.error}` : "";
+                return `${prefix}${num} | ${l}${suffix}`;
+            }).join("\n");
+            output.textContent = formatted;
+        } else {
+            output.textContent = data.error;
+        }
         return;
     }
 

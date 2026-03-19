@@ -48,6 +48,9 @@ class Api:
             f.write(content)
         return path
 
+    def navigate(self, url: str):
+        webview.windows[0].load_url(url)
+
     def open_folder(self):
         result = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
         if not result:
