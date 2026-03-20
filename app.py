@@ -156,9 +156,15 @@ def generate_ai():
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
 
-    test_code = generate_test_module(functions)
+    from agent import run_agent
+    try:
+        test_code = run_agent(source_code)
+    except EnvironmentError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": f"Agent error: {e}"}), 500
     return jsonify({
-        "test_code": test_code + "\n# TODO: AI enhancement coming soon",
+        "test_code": test_code,
         "functions_found": len(functions)
     })
 
@@ -175,19 +181,20 @@ if __name__ == '__main__':
     loading_html = open(os.path.join(os.path.dirname(__file__), "templates", "loading.html"), encoding="utf-8").read()
     loading_html = loading_html.replace('<script src="/static/scripts/gsap.min.js"></script>', f'<script>{gsap_js}</script>')
 
-    def wait_and_navigate():
+    window = webview.create_window("Unitra", html=loading_html, js_api=api, width=1000, height=700, background_color="#f5f0e8")
+
+    def on_loading_shown():
+        window.events.loaded -= on_loading_shown
+        # Wait for Flask while loading animation plays
         while True:
             try:
                 urllib.request.urlopen("http://127.0.0.1:5000/health")
-                time.sleep(1.5)
-                webview.windows[0].load_url("http://127.0.0.1:5000")
                 break
             except:
-                time.sleep(0.2)
+                time.sleep(0.1)
+        time.sleep(1.0)
+        window.load_url("http://127.0.0.1:5000")
 
-    nav_thread = threading.Thread(target=wait_and_navigate)
-    nav_thread.daemon = True
-    nav_thread.start()
+    window.events.loaded += on_loading_shown
 
-    webview.create_window("Unitra", html=loading_html, js_api=api, width=1000, height=700, background_color="#f5f0e8")
     webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", "favicon.ico"))

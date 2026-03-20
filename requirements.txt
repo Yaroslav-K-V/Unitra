@@ -3,3 +3,7 @@ pytest
 pywebview
 pythonnet
 cefpython3
+langchain
+langchain-openai
+langchain-core
+python-dotenv

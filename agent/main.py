@@ -1,0 +1,62 @@
+import os
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import ChatOpenAI
+
+from src.parser import parse_functions
+from src.generator import generate_test_module
+
+load_dotenv()
+
+SYSTEM_PROMPT = """You are Unitra, an expert Python test engineer.
+You will receive a parsed summary of functions and a base test scaffold.
+Return an improved pytest file as plain Python (no markdown fencing).
+Improvements to make:
+- Add edge cases: None, empty strings, 0, -1, very large numbers
+- Add pytest.raises tests for functions that can raise exceptions
+- Replace placeholder assert values with realistic ones
+- Add @pytest.mark.parametrize where functions have multiple simple cases
+- Keep `import pytest` at the top
+"""
+
+_chain = None
+
+
+def _get_chain():
+    global _chain
+    if _chain is not None:
+        return _chain
+    api_key = os.getenv("API_KEY")
+    if not api_key:
+        raise EnvironmentError("API_KEY not found in .env")
+    llm = ChatOpenAI(model="gpt-5.4-mini", temperature=0.2, api_key=api_key)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+        ("human", "{context}"),
+    ])
+    _chain = prompt | llm | StrOutputParser()
+    return _chain
+
+
+def run_agent(source_code: str) -> str:
+    """Parse code locally, then improve tests with a single LLM call."""
+    functions = parse_functions(source_code)
+    if not functions:
+        return "# No functions found."
+
+    base_tests = generate_test_module(functions)
+
+    summary = "\n".join(
+        f"- {f.name}({', '.join(f.args)})" +
+        (f" -> {f.return_annotation}" if f.return_annotation else "") +
+        (f"\n  docstring: {f.docstring[:120]}" if f.docstring else "")
+        for f in functions
+    )
+    context = f"Functions:\n{summary}\n\nBase scaffold:\n{base_tests}"
+
+    output: str = _get_chain().invoke({"context": context})
+    if output.startswith("```"):
+        lines = output.splitlines()
+        output = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return output.strip()
