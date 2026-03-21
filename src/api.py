@@ -1,3 +1,4 @@
+import os
 import webview
 from src.recent import add_recent
 
@@ -27,7 +28,7 @@ class Api:
         for path in result:
             add_recent(path)
             with open(path, "r", encoding="utf-8") as f:
-                parts.append(f"# --- {path.split('/')[-1].split(chr(92))[-1]} ---\n" + f.read())
+                parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
         return {"code": "\n\n".join(parts), "paths": list(result)}
 
     def open_file_by_path(self, path: str):

@@ -196,5 +196,4 @@ if __name__ == '__main__':
         window.load_url("http://127.0.0.1:5000")
 
     window.events.loaded += on_loading_shown
-
     webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", "favicon.ico"))
