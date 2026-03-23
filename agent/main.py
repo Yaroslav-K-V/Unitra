@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
-from src.parser import parse_functions
+from src.parser import parse_functions, parse_classes
 from src.generator import generate_test_module
 
 load_dotenv()
@@ -42,18 +42,31 @@ def _get_chain():
 def run_agent(source_code: str) -> str:
     """Parse code locally, then improve tests with a single LLM call."""
     functions = parse_functions(source_code)
-    if not functions:
-        return "# No functions found."
+    classes = parse_classes(source_code)
+    if not functions and not classes:
+        return "# No functions or classes found."
 
-    base_tests = generate_test_module(functions)
+    base_tests = generate_test_module(functions, classes)
 
-    summary = "\n".join(
+    func_summary = "\n".join(
         f"- {f.name}({', '.join(f.args)})" +
         (f" -> {f.return_annotation}" if f.return_annotation else "") +
         (f"\n  docstring: {f.docstring[:120]}" if f.docstring else "")
         for f in functions
+        if not f.is_method
     )
-    context = f"Functions:\n{summary}\n\nBase scaffold:\n{base_tests}"
+    class_summary = "\n".join(
+        f"- class {c.name}({', '.join(c.base_classes) or ''}):"
+        f" __init__({', '.join(c.constructor_args)})"
+        f" | methods: {', '.join(m.name for m in c.methods)}"
+        for c in classes
+    )
+    summary_parts = []
+    if func_summary:
+        summary_parts.append(f"Functions:\n{func_summary}")
+    if class_summary:
+        summary_parts.append(f"Classes:\n{class_summary}")
+    context = "\n\n".join(summary_parts) + f"\n\nBase scaffold:\n{base_tests}"
 
     output: str = _get_chain().invoke({"context": context})
     if output.startswith("```"):

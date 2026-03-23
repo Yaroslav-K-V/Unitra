@@ -38,8 +38,8 @@ async function openFiles() {
 
     output.classList.remove("error");
     output.textContent = result.test_code;
-    document.getElementById("meta").textContent = `${result.files_scanned} file(s), ${result.functions_found} function(s)`;
-    document.getElementById("badge").textContent = `${result.functions_found} functions`;
+    document.getElementById("meta").textContent = `${result.files_scanned} files · ${result.functions_found} functions · ${result.classes_found} classes · ${result.tests_generated} tests`;
+    document.getElementById("badge").textContent = `${result.tests_generated} tests`;
 }
 
 async function scanFolder(folder) {
@@ -66,6 +66,6 @@ async function scanFolder(folder) {
 
     output.classList.remove("error");
     output.textContent = data.test_code;
-    document.getElementById("meta").textContent = `${data.files_scanned} file(s), ${data.functions_found} function(s)`;
-    document.getElementById("badge").textContent = `${data.functions_found} functions`;
+    document.getElementById("meta").textContent = `${data.files_scanned} files · ${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+    document.getElementById("badge").textContent = `${data.tests_generated} tests`;
 }

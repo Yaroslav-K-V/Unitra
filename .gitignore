@@ -2,7 +2,7 @@
 .idea
 .env
 .pytest_cache
-.data
+/data/
 /__pycache__
 agent/__pycache__
 src/__pycache__

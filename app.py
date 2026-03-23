@@ -1,14 +1,22 @@
 from flask import Flask, jsonify, render_template, request, send_file
-from src.parser import parse_functions
+from src.parser import parse_functions, parse_classes
 from src.generator import generate_test_module
 from src.api import Api
 from src.recent import add_recent, get_recent
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import os
 import webview
 
 app = Flask(__name__)
+
+
+def _count_tests(test_code: str) -> int:
+    """Count how many test functions are in the generated test code."""
+    return test_code.count("\ndef test_")
 
 
 @app.route('/health')
@@ -49,12 +57,15 @@ def generate():
     source_code = data.get("code", "")
     try:
         functions = parse_functions(source_code)
+        classes = parse_classes(source_code)
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
-    test_code = generate_test_module(functions)
+    test_code = generate_test_module(functions, classes)
     return jsonify({
         "test_code": test_code,
-        "functions_found": len(functions)
+        "functions_found": len(functions),
+        "classes_found": len(classes),
+        "tests_generated": _count_tests(test_code),
     })
 
 
@@ -70,12 +81,16 @@ def generate_files():
     source = "\n\n".join(parts)
     try:
         functions = parse_functions(source)
+        classes = parse_classes(source)
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
+    test_code = generate_test_module(functions, classes)
     return jsonify({
-        "test_code": generate_test_module(functions),
+        "test_code": test_code,
         "functions_found": len(functions),
-        "files_scanned": len(parts)
+        "classes_found": len(classes),
+        "tests_generated": _count_tests(test_code),
+        "files_scanned": len(parts),
     })
 
 
@@ -97,14 +112,17 @@ def generate_project():
     source = "\n\n".join(all_code)
     try:
         functions = parse_functions(source)
+        classes = parse_classes(source)
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
 
-    test_code = generate_test_module(functions)
+    test_code = generate_test_module(functions, classes)
     return jsonify({
         "test_code": test_code,
         "functions_found": len(functions),
-        "files_scanned": files_scanned
+        "classes_found": len(classes),
+        "tests_generated": _count_tests(test_code),
+        "files_scanned": files_scanned,
     })
 
 
@@ -163,10 +181,50 @@ def generate_ai():
         return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": f"Agent error: {e}"}), 500
+    classes = parse_classes(source_code)
     return jsonify({
         "test_code": test_code,
-        "functions_found": len(functions)
+        "functions_found": len(functions),
+        "classes_found": len(classes),
+        "tests_generated": _count_tests(test_code),
     })
+
+
+@app.route('/run-tests', methods=['POST'])
+def run_tests():
+    body = request.get_json()
+    test_code     = body.get("test_code", "")
+    source_code   = body.get("source_code", "")    # prepended so functions are in scope
+    source_folder = body.get("source_folder", "")  # run pytest from here if provided
+
+    if not test_code:
+        return jsonify({"error": "No test code provided"}), 400
+
+    work_dir = source_folder if source_folder and os.path.isdir(source_folder) else None
+    full_code = (source_code + "\n\n" + test_code) if source_code else test_code
+
+    # Save temp file in the project dir (not system Temp) so pytest rootdir is correct
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    save_dir = work_dir or project_dir
+    with tempfile.NamedTemporaryFile(
+        mode='w', suffix='.py', delete=False, encoding='utf-8', dir=save_dir
+    ) as f:
+        f.write(full_code)
+        tmp_path = f.name
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", tmp_path, "-v", "--tb=short", "--no-header"],
+            capture_output=True, text=True, timeout=30, cwd=work_dir
+        )
+        return jsonify({
+            "output": result.stdout + result.stderr,
+            "returncode": result.returncode,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Timed out after 30s"}), 408
+    finally:
+        os.unlink(tmp_path)
 
 
 if __name__ == '__main__':

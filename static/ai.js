@@ -59,5 +59,5 @@ function renderResult(data) {
 
     output.classList.remove("error");
     output.textContent = data.test_code;
-    document.getElementById("meta").textContent = `${data.functions_found} function(s) found`;
+    document.getElementById("meta").textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
 }

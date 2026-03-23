@@ -67,5 +67,5 @@ async function generate() {
 
     output.classList.remove("error");
     output.textContent = data.test_code;
-    meta.textContent = `${data.functions_found} function${data.functions_found !== 1 ? "s" : ""} found`;
+    meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
 }
