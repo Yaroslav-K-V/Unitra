@@ -1,14 +1,27 @@
+import subprocess
+import sys
+import os
+
+if sys.platform.startswith("linux"):
+    try:
+        import gi
+    except ImportError:
+        print("Installing required GTK packages for Linux...")
+        subprocess.run(
+            ["sudo", "apt-get", "install", "-y",
+             "python3-gi", "python3-gi-cairo",
+             "gir1.2-gtk-3.0", "gir1.2-webkit2-4.0"],
+            check=True
+        )
+
 from flask import Flask, jsonify, render_template, request, send_file
 from src.parser import parse_functions, parse_classes
 from src.generator import generate_test_module
 from src.api import Api
 from src.recent import add_recent, get_recent
-import subprocess
-import sys
 import tempfile
 import threading
 import time
-import os
 import webview
 
 app = Flask(__name__)
@@ -254,4 +267,5 @@ if __name__ == '__main__':
         window.load_url("http://127.0.0.1:5000")
 
     window.events.loaded += on_loading_shown
-    webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", "favicon.ico"))
+    icon_name = "favicon.ico" if sys.platform == "win32" else "favicon-32x32.png"
+    webview.start(icon=os.path.join(os.path.dirname(__file__), "static", "favicon", icon_name))
