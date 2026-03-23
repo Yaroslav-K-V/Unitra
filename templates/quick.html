@@ -8,8 +8,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" href="/favicon.ico">
+    <script src="/static/scripts/theme.js"></script>
 </head>
 <body>
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
     <div class="container">
         <a href="/" class="back-link">← Back</a>
         <header>
@@ -60,6 +62,7 @@
                 </div>
                 <div id="output" class="output"></div>
                 <pre id="run-result" class="run-result"></pre>
+                <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none; margin-top:6px;">Copy result</button>
             </div>
         </main>
     </div>

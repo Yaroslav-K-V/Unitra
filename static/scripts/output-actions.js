@@ -56,4 +56,16 @@ async function runTests() {
 
     resultBox.textContent = data.output;
     resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
+
+    const copyBtn = document.getElementById("btn-copy-run");
+    if (copyBtn) copyBtn.style.display = "inline-flex";
+}
+
+async function copyRunResult() {
+    const text = document.getElementById("run-result").textContent;
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById("btn-copy-run");
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = "Copy result"; }, 1800);
 }

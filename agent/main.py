@@ -1,3 +1,4 @@
+import ast
 import os
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
@@ -72,4 +73,9 @@ def run_agent(source_code: str) -> str:
     if output.startswith("```"):
         lines = output.splitlines()
         output = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return output.strip()
+    output = output.strip()
+    try:
+        ast.parse(output)
+    except SyntaxError:
+        return "# AI output was invalid Python — showing AST scaffold\n\n" + base_tests
+    return output

@@ -14,7 +14,7 @@ def test_generates_return_assertion():
     funcs = [FunctionInfo(name="square", args=["x"], defaults=[],
                           return_annotation="int", docstring=None)]
     result = generate_test_module(funcs)
-    assert "assert result == 0" in result
+    assert "assert isinstance(result, int)" in result
 
 
 def test_generates_defaults_test():

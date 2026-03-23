@@ -1,4 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
+    document.addEventListener("keydown", e => {
+        if (e.ctrlKey && e.key === "s") { e.preventDefault(); saveOutput(); }
+    });
+
     const preload = sessionStorage.getItem("preload_folder");
     if (preload) {
         sessionStorage.removeItem("preload_folder");
@@ -16,7 +20,8 @@ async function openFiles() {
     const data = await pywebview.api.open_files();
     if (!data) return;
 
-    document.getElementById("meta").textContent = `Scanning ${data.paths.length} file(s)...`;
+    const metaEl = document.getElementById("meta");
+    metaEl.innerHTML = `<span class="spinner"></span> Scanning ${data.paths.length} file(s)...`;
 
     const res = await fetch("/generate-files", {
         method: "POST",
@@ -32,40 +37,49 @@ async function openFiles() {
     if (result.error) {
         output.textContent = result.error;
         output.classList.add("error");
-        document.getElementById("meta").textContent = "";
+        metaEl.textContent = "";
         return;
     }
 
     output.classList.remove("error");
     output.textContent = result.test_code;
-    document.getElementById("meta").textContent = `${result.files_scanned} files · ${result.functions_found} functions · ${result.classes_found} classes · ${result.tests_generated} tests`;
+    metaEl.textContent = `${result.files_scanned} files · ${result.functions_found} functions · ${result.classes_found} classes · ${result.tests_generated} tests`;
     document.getElementById("badge").textContent = `${result.tests_generated} tests`;
 }
 
 async function scanFolder(folder) {
-    document.getElementById("meta").textContent = `Scanning: ${folder}...`;
+    window._sourceFolder = folder;
+    const metaEl = document.getElementById("meta");
+    metaEl.innerHTML = `<span class="spinner"></span> Scanning: ${folder}...`;
 
-    const res = await fetch("/generate-project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder })
-    });
+    const btn = document.querySelector(".btn-primary");
+    if (btn) { btn.disabled = true; }
 
-    const data = await res.json();
-    const section = document.getElementById("result-section");
-    const output = document.getElementById("output");
+    try {
+        const res = await fetch("/generate-project", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder })
+        });
 
-    section.classList.remove("hidden");
+        const data = await res.json();
+        const section = document.getElementById("result-section");
+        const output = document.getElementById("output");
 
-    if (data.error) {
-        output.textContent = data.error;
-        output.classList.add("error");
-        document.getElementById("meta").textContent = "";
-        return;
+        section.classList.remove("hidden");
+
+        if (data.error) {
+            output.textContent = data.error;
+            output.classList.add("error");
+            metaEl.textContent = "";
+            return;
+        }
+
+        output.classList.remove("error");
+        output.textContent = data.test_code;
+        metaEl.textContent = `${data.files_scanned} files · ${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+        document.getElementById("badge").textContent = `${data.tests_generated} tests`;
+    } finally {
+        if (btn) { btn.disabled = false; }
     }
-
-    output.classList.remove("error");
-    output.textContent = data.test_code;
-    document.getElementById("meta").textContent = `${data.files_scanned} files · ${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
-    document.getElementById("badge").textContent = `${data.tests_generated} tests`;
 }

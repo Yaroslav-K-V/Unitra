@@ -9,6 +9,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    document.addEventListener("keydown", e => {
+        if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); generate(); }
+        if (e.ctrlKey && e.key === "s")     { e.preventDefault(); saveOutput(); }
+    });
+
     // Preload code if navigated from recent files
     const preload = sessionStorage.getItem("preload_code");
     if (preload) {
@@ -29,43 +34,50 @@ async function openFile() {
 
 async function generate() {
     const code = document.getElementById("code").value;
+    const btn = document.querySelector(".btn-primary");
+    const orig = btn ? btn.textContent.trim() : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
 
-    const res = await fetch("/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code })
-    });
+    try {
+        const res = await fetch("/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+        });
 
-    const data = await res.json();
-    const section = document.getElementById("result-section");
-    const output = document.getElementById("output");
-    const meta = document.getElementById("meta");
+        const data = await res.json();
+        const section = document.getElementById("result-section");
+        const output = document.getElementById("output");
+        const meta = document.getElementById("meta");
 
-    section.classList.remove("hidden");
+        section.classList.remove("hidden");
 
-    if (data.error) {
-        output.classList.add("error");
-        meta.textContent = "";
+        if (data.error) {
+            output.classList.add("error");
+            meta.textContent = "";
 
-        const match = data.error.match(/line (\d+)/);
-        if (match) {
-            const errLine = parseInt(match[1]);
-            const lines = code.split("\n");
-            const formatted = lines.map((l, i) => {
-                const n = i + 1;
-                const prefix = n === errLine ? "→ " : "  ";
-                const num = String(n).padStart(3, " ");
-                const suffix = n === errLine ? `    ← ${data.error}` : "";
-                return `${prefix}${num} | ${l}${suffix}`;
-            }).join("\n");
-            output.textContent = formatted;
-        } else {
-            output.textContent = data.error;
+            const match = data.error.match(/line (\d+)/);
+            if (match) {
+                const errLine = parseInt(match[1]);
+                const lines = code.split("\n");
+                const formatted = lines.map((l, i) => {
+                    const n = i + 1;
+                    const prefix = n === errLine ? "→ " : "  ";
+                    const num = String(n).padStart(3, " ");
+                    const suffix = n === errLine ? `    ← ${data.error}` : "";
+                    return `${prefix}${num} | ${l}${suffix}`;
+                }).join("\n");
+                output.textContent = formatted;
+            } else {
+                output.textContent = data.error;
+            }
+            return;
         }
-        return;
-    }
 
-    output.classList.remove("error");
-    output.textContent = data.test_code;
-    meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+        output.classList.remove("error");
+        output.textContent = data.test_code;
+        meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
+    }
 }

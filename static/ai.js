@@ -8,6 +8,11 @@ document.addEventListener("DOMContentLoaded", () => {
             this.selectionStart = this.selectionEnd = start + 4;
         }
     });
+
+    document.addEventListener("keydown", e => {
+        if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); generateAI(); }
+        if (e.ctrlKey && e.key === "s")     { e.preventDefault(); saveOutput(); }
+    });
 });
 
 async function pickFiles() {
@@ -37,12 +42,20 @@ async function pickFolder() {
 }
 
 async function generateAI() {
-    const res = await fetch("/generate-ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: document.getElementById("code").value })
-    });
-    renderResult(await res.json());
+    const btn = document.querySelector(".btn-primary");
+    const orig = btn ? btn.textContent.trim() : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+
+    try {
+        const res = await fetch("/generate-ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: document.getElementById("code").value })
+        });
+        renderResult(await res.json());
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = orig || "Generate with AI"; }
+    }
 }
 
 function renderResult(data) {
