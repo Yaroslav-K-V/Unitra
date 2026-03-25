@@ -1,5 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("code").addEventListener("keydown", function (e) {
+    const textarea = document.getElementById("code");
+
+    textarea.addEventListener("keydown", function (e) {
         if (e.key === "Tab") {
             e.preventDefault();
             const start = this.selectionStart;
@@ -7,6 +9,18 @@ document.addEventListener("DOMContentLoaded", () => {
             this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
             this.selectionStart = this.selectionEnd = start + 4;
         }
+    });
+
+    textarea.addEventListener("dragover", e => { e.preventDefault(); textarea.classList.add("drag-over"); });
+    textarea.addEventListener("dragleave", () => textarea.classList.remove("drag-over"));
+    textarea.addEventListener("drop", e => {
+        e.preventDefault();
+        textarea.classList.remove("drag-over");
+        const file = e.dataTransfer.files[0];
+        if (!file || !file.name.endsWith(".py")) return;
+        const reader = new FileReader();
+        reader.onload = () => { textarea.value = reader.result; };
+        reader.readAsText(file);
     });
 
     document.addEventListener("keydown", e => {
@@ -39,13 +53,19 @@ async function generate() {
     if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
 
     try {
-        const res = await fetch("/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code })
-        });
+        let res, data;
+        try {
+            res = await fetch("/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code })
+            });
+            data = await res.json();
+        } catch {
+            _showError("Connection failed — is the app running?");
+            return;
+        }
 
-        const data = await res.json();
         const section = document.getElementById("result-section");
         const output = document.getElementById("output");
         const meta = document.getElementById("meta");
@@ -80,4 +100,14 @@ async function generate() {
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
     }
+}
+
+function _showError(msg) {
+    const section = document.getElementById("result-section");
+    const output = document.getElementById("output");
+    const meta = document.getElementById("meta");
+    section.classList.remove("hidden");
+    output.classList.add("error");
+    output.textContent = msg;
+    if (meta) meta.textContent = "";
 }

@@ -1,5 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("code").addEventListener("keydown", function (e) {
+    const textarea = document.getElementById("code");
+
+    textarea.addEventListener("keydown", function (e) {
         if (e.key === "Tab") {
             e.preventDefault();
             const start = this.selectionStart;
@@ -7,6 +9,18 @@ document.addEventListener("DOMContentLoaded", () => {
             this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
             this.selectionStart = this.selectionEnd = start + 4;
         }
+    });
+
+    textarea.addEventListener("dragover", e => { e.preventDefault(); textarea.classList.add("drag-over"); });
+    textarea.addEventListener("dragleave", () => textarea.classList.remove("drag-over"));
+    textarea.addEventListener("drop", e => {
+        e.preventDefault();
+        textarea.classList.remove("drag-over");
+        const file = e.dataTransfer.files[0];
+        if (!file || !file.name.endsWith(".py")) return;
+        const reader = new FileReader();
+        reader.onload = () => { textarea.value = reader.result; };
+        reader.readAsText(file);
     });
 
     document.addEventListener("keydown", e => {
@@ -47,12 +61,19 @@ async function generateAI() {
     if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
 
     try {
-        const res = await fetch("/generate-ai", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code: document.getElementById("code").value })
-        });
-        renderResult(await res.json());
+        let data;
+        try {
+            const res = await fetch("/generate-ai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code: document.getElementById("code").value })
+            });
+            data = await res.json();
+        } catch {
+            renderResult({ error: "Connection failed — is the app running?" });
+            return;
+        }
+        renderResult(data);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = orig || "Generate with AI"; }
     }
@@ -64,7 +85,11 @@ function renderResult(data) {
     section.classList.remove("hidden");
 
     if (data.error) {
-        output.textContent = data.error;
+        let msg = data.error;
+        if (msg.toLowerCase().includes("api_key") || msg.toLowerCase().includes("api key")) {
+            msg += "\n\nSet API_KEY=your_key in .env and restart the app.";
+        }
+        output.textContent = msg;
         output.classList.add("error");
         document.getElementById("meta").textContent = "";
         return;

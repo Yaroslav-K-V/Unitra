@@ -31,34 +31,36 @@ async function runTests() {
     resultBox.textContent = "";
     resultBox.className = "run-result";
 
-    // Grab source code from textarea if present (quick/ai pages)
     const sourceEl = document.getElementById("code");
     const source_code = sourceEl ? sourceEl.value : "";
-
-    // project.js sets this when scanning a folder
     const source_folder = window._sourceFolder || "";
 
-    const res = await fetch("/run-tests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ test_code: code, source_code, source_folder })
-    });
+    try {
+        const res = await fetch("/run-tests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ test_code: code, source_code, source_folder })
+        });
+        const data = await res.json();
 
-    const data = await res.json();
-    btn.disabled = false;
-    btn.textContent = "Run Tests";
+        if (data.error) {
+            resultBox.textContent = data.error;
+            resultBox.className = "run-result run-error";
+            return;
+        }
 
-    if (data.error) {
-        resultBox.textContent = data.error;
+        resultBox.textContent = data.output;
+        resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
+
+        const copyBtn = document.getElementById("btn-copy-run");
+        if (copyBtn) copyBtn.style.display = "inline-flex";
+    } catch {
+        resultBox.textContent = "Connection failed — is the app running?";
         resultBox.className = "run-result run-error";
-        return;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Run Tests";
     }
-
-    resultBox.textContent = data.output;
-    resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
-
-    const copyBtn = document.getElementById("btn-copy-run");
-    if (copyBtn) copyBtn.style.display = "inline-flex";
 }
 
 async function copyRunResult() {

@@ -50,10 +50,20 @@ async function openFiles() {
 async function scanFolder(folder) {
     window._sourceFolder = folder;
     const metaEl = document.getElementById("meta");
-    metaEl.innerHTML = `<span class="spinner"></span> Scanning: ${folder}...`;
-
     const btn = document.querySelector(".btn-primary");
     if (btn) { btn.disabled = true; }
+
+    try {
+        const cr = await fetch(`/scan-count?folder=${encodeURIComponent(folder)}`);
+        const cd = await cr.json();
+        if (cd.count !== undefined) {
+            metaEl.innerHTML = `<span class="spinner"></span> Found ${cd.count} file(s) — generating...`;
+        } else {
+            metaEl.innerHTML = `<span class="spinner"></span> Scanning: ${folder}...`;
+        }
+    } catch {
+        metaEl.innerHTML = `<span class="spinner"></span> Scanning: ${folder}...`;
+    }
 
     try {
         const res = await fetch("/generate-project", {

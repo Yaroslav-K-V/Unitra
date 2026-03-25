@@ -152,6 +152,7 @@ textarea {
 
 textarea:focus { border-color: var(--accent); }
 textarea::placeholder { color: var(--text-faint); }
+textarea.drag-over { border-color: var(--accent); border-style: dashed; background: var(--code-bg); }
 
 /* Section header with examples */
 .section-header {

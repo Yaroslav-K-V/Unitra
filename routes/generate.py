@@ -38,6 +38,20 @@ def _count_tests(test_code: str) -> int:
     return test_code.count("\ndef test_")
 
 
+@generate_bp.route("/scan-count", methods=["GET"])
+def scan_count():
+    folder = request.args.get("folder", "")
+    if not os.path.isdir(folder):
+        return jsonify({"error": "Invalid folder"}), 400
+    count = 0
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for fname in files:
+            if fname.endswith(".py") and not fname.startswith("test_"):
+                count += 1
+    return jsonify({"count": count})
+
+
 @generate_bp.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()

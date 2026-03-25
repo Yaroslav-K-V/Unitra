@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import subprocess
 import tempfile
 from flask import Blueprint, jsonify, request, current_app
@@ -49,6 +50,9 @@ def run_tests():
         source_code = "\n\n".join(parts)
 
     full_code = (source_code + "\n\n" + test_code) if source_code else test_code
+
+    if not shutil.which("pytest"):
+        return jsonify({"error": "pytest not found — run: pip install pytest"}), 400
 
     save_dir = work_dir or current_app.root_path
     with tempfile.NamedTemporaryFile(
