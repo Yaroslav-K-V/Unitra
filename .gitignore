@@ -1,5 +1,7 @@
 .venv
+venv
 .idea
+.DS_Store
 .env
 .pytest_cache
 /data/

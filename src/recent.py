@@ -13,6 +13,7 @@ def _load() -> list:
 
 
 def _save(items: list):
+    os.makedirs(os.path.dirname(RECENT_PATH), exist_ok=True)
     with open(RECENT_PATH, "w", encoding="utf-8") as f:
         json.dump(items, f, indent=2)
 
