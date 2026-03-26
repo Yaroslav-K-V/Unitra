@@ -32,9 +32,12 @@ document.addEventListener("DOMContentLoaded", () => {
 async function pickFiles() {
     const data = await pywebview.api.open_files();
     if (!data) return;
+    window._sourceFolder = "";
     if (data.paths.length === 1) {
         document.getElementById("code").value = data.code;
+        window._sourceCode = "";
     } else {
+        window._sourceCode = data.code;
         const res = await fetch("/generate-ai", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -47,6 +50,8 @@ async function pickFiles() {
 async function pickFolder() {
     const folder = await pywebview.api.open_folder();
     if (!folder) return;
+    window._sourceFolder = folder;
+    window._sourceCode = "";
     const res = await fetch("/generate-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

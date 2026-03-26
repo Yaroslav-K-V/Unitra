@@ -1,5 +1,6 @@
 import ast
 import os
+import re
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -69,10 +70,11 @@ def run_agent(source_code: str) -> str:
         summary_parts.append(f"Classes:\n{class_summary}")
     context = "\n\n".join(summary_parts) + f"\n\nBase scaffold:\n{base_tests}"
 
+    MAX_CONTEXT = 8000
+        context = context[:MAX_CONTEXT] + "\n# ... (truncated)"
+
     output: str = _get_chain().invoke({"context": context})
-    if output.startswith("```"):
-        lines = output.splitlines()
-        output = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    output = re.sub(r"^```(?:\w+)?\n(.*)\n```$", r"\1", output.strip(), flags=re.DOTALL)
     output = output.strip()
     try:
         ast.parse(output)

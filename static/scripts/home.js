@@ -13,7 +13,8 @@ async function loadRecent() {
     const list = document.getElementById("recent-list");
     section.classList.remove("hidden");
 
-    list.innerHTML = items.map(item => {
+    list.innerHTML = "";
+    items.forEach(item => {
         const name = item.path.split(/[\\/]/).pop();
         const dir = item.path.split(/[\\/]/).slice(-2, -1)[0] || "";
         const isFolder = item.type === "folder";
@@ -28,19 +29,17 @@ async function loadRecent() {
         const badge = isFolder
             ? `<span class="recent-type-badge">folder</span>`
             : "";
-        const pathEscaped = item.path.replace(/\\/g, "\\\\");
-        const onclick = isFolder
-            ? `openRecentFolder('${pathEscaped}')`
-            : `openRecentFile('${pathEscaped}')`;
-
-        return `
-            <li class="recent-item" onclick="${onclick}">
-                ${icon}
-                <span class="recent-name">${name}</span>
-                <span class="recent-dir">${dir}</span>
-                ${badge}
-            </li>`;
-    }).join("");
+        const li = document.createElement("li");
+        li.className = "recent-item";
+        li.dataset.path = item.path;
+        li.dataset.type = item.type;
+        li.innerHTML = `${icon}<span class="recent-name">${name}</span><span class="recent-dir">${dir}</span>${badge}`;
+        li.addEventListener("click", () => {
+            if (isFolder) openRecentFolder(item.path);
+            else openRecentFile(item.path);
+        });
+        list.appendChild(li);
+    });
 }
 
 async function openRecentFile(path) {

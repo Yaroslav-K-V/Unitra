@@ -32,7 +32,7 @@ async function runTests() {
     resultBox.className = "run-result";
 
     const sourceEl = document.getElementById("code");
-    const source_code = sourceEl ? sourceEl.value : "";
+    const source_code = (sourceEl ? sourceEl.value : "") || window._sourceCode || "";
     const source_folder = window._sourceFolder || "";
 
     try {

@@ -20,6 +20,9 @@ async function openFiles() {
     const data = await pywebview.api.open_files();
     if (!data) return;
 
+    window._sourceCode = data.code;
+    window._sourceFolder = "";
+
     const metaEl = document.getElementById("meta");
     metaEl.innerHTML = `<span class="spinner"></span> Scanning ${data.paths.length} file(s)...`;
 

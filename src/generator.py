@@ -107,7 +107,7 @@ def generate_class_tests(classes: List[ClassInfo]) -> str:
         lines.append("")
 
         for method in cls.methods:
-            call_args = method.args[1:]  # skip self
+            call_args = method.args[1:] if method.is_method else method.args
             arg_vals = [_default_for(method.arg_annotations.get(a)) for a in call_args]
             method_call = f"obj.{method.name}({', '.join(arg_vals)})"
 
@@ -133,7 +133,7 @@ def generate_test_module(functions: List[FunctionInfo], classes: Optional[List[C
         lines.append("")
 
         non_self_args = func.args[1:] if func.is_method else func.args
-        if func.defaults and len(func.defaults) >= len(non_self_args):
+        if func.defaults and len(func.defaults) == len(non_self_args):
             lines.append(f"def test_{func.name}_defaults():")
             lines.append(f"    result = {func.name}()")
             lines.append(f"    {_assert_for(func)}")

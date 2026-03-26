@@ -77,7 +77,7 @@ def generate_files():
     for path in paths:
         if not os.path.isfile(path):
             continue
-        with open(path, encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
     source = "\n\n".join(parts)
     try:
@@ -107,7 +107,7 @@ def generate_project():
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for fname in files:
             if fname.endswith(".py") and not fname.startswith("test_"):
-                with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
+                with open(os.path.join(root, fname), encoding="utf-8", errors="replace") as f:
                     all_code.append(f"# --- {fname} ---\n" + f.read())
                 files_scanned += 1
 
@@ -139,7 +139,7 @@ def generate_ai():
         parts = []
         for path in data["paths"]:
             if os.path.isfile(path):
-                with open(path, encoding="utf-8", errors="ignore") as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
         source_code = "\n\n".join(parts)
     elif "file" in data:
@@ -156,7 +156,7 @@ def generate_ai():
         for root, _, files in os.walk(folder):
             for fname in files:
                 if fname.endswith(".py"):
-                    with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
+                    with open(os.path.join(root, fname), encoding="utf-8", errors="replace") as f:
                         parts.append(f"# --- {fname} ---\n" + f.read())
         source_code = "\n\n".join(parts)
 
