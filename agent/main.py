@@ -71,6 +71,7 @@ def run_agent(source_code: str) -> str:
     context = "\n\n".join(summary_parts) + f"\n\nBase scaffold:\n{base_tests}"
 
     MAX_CONTEXT = 8000
+    if len(context) > MAX_CONTEXT:
         context = context[:MAX_CONTEXT] + "\n# ... (truncated)"
 
     output: str = _get_chain().invoke({"context": context})
