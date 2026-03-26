@@ -68,7 +68,7 @@ def parse_functions(source_code: str) -> List[FunctionInfo]:
 def parse_classes(source_code: str) -> List[ClassInfo]:
     tree = ast.parse(source_code)
     classes = []
-    for node in tree.body:
+    for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
         base_classes = [ast.unparse(b) for b in node.bases]
