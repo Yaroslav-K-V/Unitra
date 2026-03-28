@@ -1,9 +1,11 @@
 function getGreeting() {
     const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12)  return "Good morning";
-    if (hour >= 12 && hour < 17) return "Good afternoon";
-    if (hour >= 17 && hour < 22) return "Good evening";
-    return "Good night";
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+    if (hour >= 5 && hour < 12)  return pick(["Good morning", "Rise and shine", "Morning"]);
+    if (hour >= 12 && hour < 17) return pick(["Good afternoon", "Hey there", "Hello"]);
+    if (hour >= 17 && hour < 22) return pick(["Good evening", "Evening", "Welcome back"]);
+    return pick(["Good night", "Burning the midnight oil?", "Late night session"]);
 }
 
 function renderGreeting(elementId) {

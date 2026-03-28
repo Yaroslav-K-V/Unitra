@@ -1,0 +1,14 @@
+[
+    {
+        "label": "Simple function",
+        "code": "def add(a: int, b: int) -> int:\n    return a + b\n\ndef multiply(a: int, b: int) -> int:\n    return a * b"
+    },
+    {
+        "label": "Class",
+        "code": "class BankAccount:\n    def __init__(self, owner: str, balance: float = 0.0):\n        self.owner = owner\n        self.balance = balance\n\n    def deposit(self, amount: float) -> float:\n        if amount <= 0:\n            raise ValueError(\"Amount must be positive\")\n        self.balance += amount\n        return self.balance\n\n    def withdraw(self, amount: float) -> float:\n        if amount > self.balance:\n            raise ValueError(\"Insufficient funds\")\n        self.balance -= amount\n        return self.balance"
+    },
+    {
+        "label": "With exceptions",
+        "code": "def divide(a: float, b: float) -> float:\n    if b == 0:\n        raise ZeroDivisionError(\"Cannot divide by zero\")\n    return a / b\n\ndef parse_age(value: str) -> int:\n    age = int(value)\n    if age < 0 or age > 150:\n        raise ValueError(f\"Invalid age: {age}\")\n    return age"
+    }
+]

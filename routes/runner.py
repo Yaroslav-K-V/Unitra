@@ -51,7 +51,11 @@ def run_tests():
 
     full_code = (source_code + "\n\n" + test_code) if source_code else test_code
 
-    if not shutil.which("pytest"):
+    has_pytest = shutil.which("pytest") or subprocess.run(
+        [sys.executable, "-m", "pytest", "--version"],
+        capture_output=True,
+    ).returncode == 0
+    if not has_pytest:
         return jsonify({"error": "pytest not found — run: pip install pytest"}), 400
 
     save_dir = work_dir or current_app.root_path
