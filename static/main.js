@@ -97,6 +97,7 @@ async function generate() {
         output.classList.remove("error");
         output.textContent = data.test_code;
         meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+        if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
     }

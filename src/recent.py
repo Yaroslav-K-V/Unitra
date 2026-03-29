@@ -1,8 +1,9 @@
 import json
 import os
 
+from src.config import MAX_RECENT
+
 RECENT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "recent.json")
-MAX_RECENT = 8
 
 
 def _load() -> list:

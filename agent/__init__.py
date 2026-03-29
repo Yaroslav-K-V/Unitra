@@ -1,3 +1,3 @@
-from agent.main import run_agent
+from agent.main import run_agent, stream_agent
 
-__all__ = ["run_agent"]
+__all__ = ["run_agent", "stream_agent"]

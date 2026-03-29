@@ -1,22 +1,42 @@
+function showToast(msg) {
+    let t = document.getElementById("toast");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "toast";
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("toast-show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("toast-show"), 2000);
+}
+
 async function copyOutput() {
     const text = document.getElementById("output").textContent;
     if (!text) return;
     await navigator.clipboard.writeText(text);
-
-    const btn = document.getElementById("btn-copy");
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = "Copy"; }, 1800);
+    showToast("Copied!");
 }
 
 async function saveOutput(defaultName = "test_generated.py") {
     const text = document.getElementById("output").textContent;
     if (!text) return;
     const path = await pywebview.api.save_file(text, defaultName);
-    if (path) {
-        const btn = document.getElementById("btn-save");
-        btn.textContent = "Saved!";
-        setTimeout(() => { btn.textContent = "Save as .py"; }, 1800);
-    }
+    if (path) showToast("Saved!");
+}
+
+async function saveConftest() {
+    const code = window._conftestCode;
+    if (!code) return;
+    const path = await pywebview.api.save_file(code, "conftest.py");
+    if (path) showToast("conftest.py saved!");
+}
+
+function updateConftestButton(conftestCode) {
+    window._conftestCode = conftestCode || "";
+    const btn = document.getElementById("btn-save-conftest");
+    if (!btn) return;
+    btn.style.display = conftestCode ? "inline-flex" : "none";
 }
 
 async function runTests() {
@@ -49,7 +69,9 @@ async function runTests() {
             return;
         }
 
-        resultBox.textContent = data.output;
+        let output = data.output;
+        if (data.coverage) output += `\n\nCoverage: ${data.coverage}`;
+        resultBox.textContent = output;
         resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
 
         const copyBtn = document.getElementById("btn-copy-run");
@@ -67,7 +89,5 @@ async function copyRunResult() {
     const text = document.getElementById("run-result").textContent;
     if (!text) return;
     await navigator.clipboard.writeText(text);
-    const btn = document.getElementById("btn-copy-run");
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = "Copy result"; }, 1800);
+    showToast("Copied!");
 }

@@ -48,6 +48,7 @@ async function openFiles() {
     output.textContent = result.test_code;
     metaEl.textContent = `${result.files_scanned} files · ${result.functions_found} functions · ${result.classes_found} classes · ${result.tests_generated} tests`;
     document.getElementById("badge").textContent = `${result.tests_generated} tests`;
+    if (typeof updateConftestButton === "function") updateConftestButton(result.conftest_code);
 }
 
 async function scanFolder(folder) {
@@ -59,8 +60,15 @@ async function scanFolder(folder) {
     try {
         const cr = await fetch(`/scan-count?folder=${encodeURIComponent(folder)}`);
         const cd = await cr.json();
+        if (cd.count === 0) {
+            metaEl.textContent = "No Python files found in this folder.";
+            if (btn) btn.disabled = false;
+            return;
+        }
         if (cd.count !== undefined) {
-            metaEl.innerHTML = `<span class="spinner"></span> Found ${cd.count} file(s) — generating...`;
+            metaEl.innerHTML = `
+                <div class="progress-bar-wrap"><div class="progress-bar-inner"></div></div>
+                Generating tests for ${cd.count} file(s)…`;
         } else {
             metaEl.innerHTML = `<span class="spinner"></span> Scanning: ${folder}...`;
         }
@@ -92,6 +100,7 @@ async function scanFolder(folder) {
         output.textContent = data.test_code;
         metaEl.textContent = `${data.files_scanned} files · ${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         document.getElementById("badge").textContent = `${data.tests_generated} tests`;
+        if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
     } finally {
         if (btn) { btn.disabled = false; }
     }

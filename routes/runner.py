@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import shutil
@@ -6,7 +7,10 @@ import tempfile
 from flask import Blueprint, jsonify, request, current_app
 
 from src.recent import add_recent, get_recent
+from src.config import PYTEST_TIMEOUT
 from routes.generate import SKIP_DIRS, _definitions_only
+
+log = logging.getLogger(__name__)
 
 runner_bp = Blueprint("runner", __name__)
 
@@ -45,8 +49,8 @@ def run_tests():
                     try:
                         with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
                             parts.append(_definitions_only(f.read()))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("Could not read %s: %s", fname, e)
         source_code = "\n\n".join(parts)
 
     full_code = (source_code + "\n\n" + test_code) if source_code else test_code
@@ -65,16 +69,25 @@ def run_tests():
         f.write(full_code)
         tmp_path = f.name
 
+    cov_args = ["--cov", "--cov-report=term-missing"] if shutil.which("coverage") else []
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", tmp_path, "-v", "--tb=short", "--no-header"],
-            capture_output=True, text=True, timeout=30, cwd=work_dir,
+            [sys.executable, "-m", "pytest", tmp_path, "-v", "--tb=short", "--no-header"] + cov_args,
+            capture_output=True, text=True, timeout=PYTEST_TIMEOUT, cwd=work_dir,
         )
+        coverage = None
+        for line in (result.stdout + result.stderr).splitlines():
+            if line.strip().startswith("TOTAL"):
+                parts = line.split()
+                if parts:
+                    coverage = parts[-1]
+                break
         return jsonify({
             "output": result.stdout + result.stderr,
             "returncode": result.returncode,
+            "coverage": coverage,
         })
     except subprocess.TimeoutExpired:
-        return jsonify({"error": "Timed out after 30s"}), 408
+        return jsonify({"error": f"Timed out after {PYTEST_TIMEOUT}s"}), 408
     finally:
         os.unlink(tmp_path)

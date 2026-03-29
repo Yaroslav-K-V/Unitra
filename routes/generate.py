@@ -1,10 +1,15 @@
 import ast
+import json
+import logging
 import os
-from flask import Blueprint, jsonify, request
+import pathlib
+from flask import Blueprint, Response, jsonify, request, stream_with_context
+
+log = logging.getLogger(__name__)
 
 from src.parser import parse_functions, parse_classes
-from src.generator import generate_test_module
-from agent import run_agent
+from src.generator import generate_test_module, generate_conftest
+from agent import run_agent, stream_agent
 
 generate_bp = Blueprint("generate", __name__)
 
@@ -23,7 +28,8 @@ def _definitions_only(source: str) -> str:
     """Return only class/function defs and imports — skips module-level statements."""
     try:
         tree = ast.parse(source)
-    except SyntaxError:
+    except SyntaxError as e:
+        log.debug("Syntax error stripping module code: %s", e)
         return source
     lines = source.splitlines()
     parts = []
@@ -62,8 +68,10 @@ def generate():
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
     test_code = generate_test_module(functions, classes)
+    conftest_code = generate_conftest(classes) if classes else ""
     return jsonify({
         "test_code": test_code,
+        "conftest_code": conftest_code,
         "functions_found": len(functions),
         "classes_found": len(classes),
         "tests_generated": _count_tests(test_code),
@@ -86,8 +94,10 @@ def generate_files():
     except SyntaxError as e:
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
     test_code = generate_test_module(functions, classes)
+    conftest_code = generate_conftest(classes) if classes else ""
     return jsonify({
         "test_code": test_code,
+        "conftest_code": conftest_code,
         "functions_found": len(functions),
         "classes_found": len(classes),
         "tests_generated": _count_tests(test_code),
@@ -119,13 +129,39 @@ def generate_project():
         return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
 
     test_code = generate_test_module(functions, classes)
+    conftest_code = generate_conftest(classes) if classes else ""
     return jsonify({
         "test_code": test_code,
+        "conftest_code": conftest_code,
         "functions_found": len(functions),
         "classes_found": len(classes),
         "tests_generated": _count_tests(test_code),
         "files_scanned": files_scanned,
     })
+
+
+@generate_bp.route("/settings/save", methods=["POST"])
+def settings_save():
+    data = request.get_json()
+    env_path = pathlib.Path(__file__).parent.parent / ".env"
+
+    existing = {}
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                existing[k.strip()] = v.strip()
+
+    if "api_key" in data and data["api_key"]:
+        existing["API_KEY"] = data["api_key"]
+    if "model" in data and data["model"]:
+        existing["OPENAI_MODEL"] = data["model"]
+
+    env_path.write_text(
+        "\n".join(f"{k}={v}" for k, v in existing.items()) + "\n",
+        encoding="utf-8"
+    )
+    return jsonify({"ok": True})
 
 
 @generate_bp.route("/generate-ai", methods=["POST"])
@@ -173,9 +209,28 @@ def generate_ai():
         return jsonify({"error": f"Agent error: {e}"}), 500
 
     classes = parse_classes(source_code)
+    conftest_code = generate_conftest(classes) if classes else ""
     return jsonify({
         "test_code": test_code,
+        "conftest_code": conftest_code,
         "functions_found": len(functions),
         "classes_found": len(classes),
         "tests_generated": _count_tests(test_code),
     })
+
+
+@generate_bp.route("/generate-ai-stream", methods=["GET"])
+def generate_ai_stream():
+    source_code = request.args.get("code", "")
+
+    def generate():
+        try:
+            for token in stream_agent(source_code):
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        except EnvironmentError as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Agent error: {e}'})}\n\n"
+        yield "event: done\ndata: {}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")

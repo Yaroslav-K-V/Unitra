@@ -60,28 +60,45 @@ async function pickFolder() {
     renderResult(await res.json());
 }
 
-async function generateAI() {
+function generateAI() {
+    const code = document.getElementById("code").value;
     const btn = document.querySelector(".btn-primary");
-    const orig = btn ? btn.textContent.trim() : "";
-    if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+    const section = document.getElementById("result-section");
+    const output = document.getElementById("output");
+    const meta = document.getElementById("meta");
 
-    try {
-        let data;
-        try {
-            const res = await fetch("/generate-ai", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code: document.getElementById("code").value })
-            });
-            data = await res.json();
-        } catch {
-            renderResult({ error: "Connection failed — is the app running?" });
+    if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+    section.classList.remove("hidden");
+    output.classList.remove("error");
+    output.textContent = "";
+    meta.textContent = "Streaming…";
+
+    let accumulated = "";
+    const es = new EventSource(`/generate-ai-stream?code=${encodeURIComponent(code)}`);
+
+    es.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.error) {
+            es.close();
+            renderResult({ error: msg.error });
+            if (btn) { btn.disabled = false; btn.textContent = "Generate with AI"; }
             return;
         }
-        renderResult(data);
-    } finally {
-        if (btn) { btn.disabled = false; btn.textContent = orig || "Generate with AI"; }
-    }
+        accumulated += msg.token || "";
+        output.textContent = accumulated;
+    };
+
+    es.addEventListener("done", () => {
+        es.close();
+        meta.textContent = "";
+        if (btn) { btn.disabled = false; btn.textContent = "Generate with AI"; }
+    });
+
+    es.onerror = () => {
+        es.close();
+        if (!accumulated) renderResult({ error: "Connection failed — is the app running?" });
+        if (btn) { btn.disabled = false; btn.textContent = "Generate with AI"; }
+    };
 }
 
 function renderResult(data) {
@@ -103,4 +120,5 @@ function renderResult(data) {
     output.classList.remove("error");
     output.textContent = data.test_code;
     document.getElementById("meta").textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
+    if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
 }

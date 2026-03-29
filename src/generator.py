@@ -4,8 +4,8 @@ from src.parser import FunctionInfo, ClassInfo
 
 # Maps type annotation to edge case values for parametrize tests
 _EDGE_CASES = {
-    "int":   ["0", "-1", "999999"],
-    "float": ["0.0", "-1.0", "1e9"],
+    "int":   ["0", "-1", "1000"],
+    "float": ["0.0", "-1.0", "1e6"],
     "str":   ['""', '"a"', '"x" * 100'],
     "list":  ["[]", "[None]"],
     "dict":  ["{}"],
@@ -15,7 +15,7 @@ _EDGE_CASES = {
 # Maps type annotation to a sensible default value
 _TYPE_DEFAULTS = {
     "int": "0",
-    "float": "0.0",
+    "float": "1.0",
     "str": '"test"',
     "bool": "True",
     "list": "[]",
@@ -120,22 +120,50 @@ def generate_class_tests(classes: List[ClassInfo]) -> str:
     return "\n".join(lines)
 
 
-def generate_test_module(functions: List[FunctionInfo], classes: Optional[List[ClassInfo]] = None) -> str:
+def generate_conftest(classes: List[ClassInfo]) -> str:
+    """Generate a conftest.py with @pytest.fixture for each class."""
     lines = ["import pytest", ""]
+    for cls in classes:
+        args = [_default_for(cls.constructor_annotations.get(a)) for a in cls.constructor_args]
+        lines += [
+            "",
+            "@pytest.fixture",
+            f"def {cls.name.lower()}_instance():",
+            f"    return {cls.name}({', '.join(args)})",
+        ]
+    return "\n".join(lines)
+
+
+def generate_test_module(functions: List[FunctionInfo], classes: Optional[List[ClassInfo]] = None) -> str:
+    has_async = any(f.is_async for f in functions)
+    if has_async:
+        lines = ["import pytest", "import pytest_asyncio", ""]
+    else:
+        lines = ["import pytest", ""]
 
     for func in functions:
         raw_args = func.args[1:] if func.is_method else func.args
         args_call = ", ".join(_default_for(func.arg_annotations.get(a)) for a in raw_args)
 
-        lines.append(f"def test_{func.name}_basic():")
-        lines.append(f"    result = {func.name}({args_call})")
+        if func.is_async:
+            lines.append("@pytest.mark.asyncio")
+            lines.append(f"async def test_{func.name}_basic():")
+            lines.append(f"    result = await {func.name}({args_call})")
+        else:
+            lines.append(f"def test_{func.name}_basic():")
+            lines.append(f"    result = {func.name}({args_call})")
         lines.append(f"    {_assert_for(func)}")
         lines.append("")
 
         non_self_args = func.args[1:] if func.is_method else func.args
         if func.defaults and len(func.defaults) == len(non_self_args):
-            lines.append(f"def test_{func.name}_defaults():")
-            lines.append(f"    result = {func.name}()")
+            if func.is_async:
+                lines.append("@pytest.mark.asyncio")
+                lines.append(f"async def test_{func.name}_defaults():")
+                lines.append(f"    result = await {func.name}()")
+            else:
+                lines.append(f"def test_{func.name}_defaults():")
+                lines.append(f"    result = {func.name}()")
             lines.append(f"    {_assert_for(func)}")
             lines.append("")
 

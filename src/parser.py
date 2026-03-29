@@ -11,6 +11,7 @@ class FunctionInfo:
     return_annotation: Optional[str]
     docstring: Optional[str]
     is_method: bool = False
+    is_async: bool = False
     return_value: Optional[str] = None
     arg_annotations: Dict[str, str] = field(default_factory=dict)
 
@@ -51,6 +52,7 @@ def _parse_function(node) -> FunctionInfo:
         return_annotation=return_annotation,
         docstring=docstring,
         is_method=is_method,
+        is_async=isinstance(node, ast.AsyncFunctionDef),
         return_value=return_value,
         arg_annotations=arg_annotations,
     )

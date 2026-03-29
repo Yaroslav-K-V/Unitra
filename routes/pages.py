@@ -37,3 +37,12 @@ def project():
 @pages_bp.route("/ai")
 def ai():
     return render_template("ai.html", active_page="ai")
+
+
+@pages_bp.route("/settings")
+def settings():
+    from src.config import AI_MODEL
+    import os
+    return render_template("settings.html", active_page="settings",
+                           api_key_set=bool(os.getenv("API_KEY")),
+                           current_model=AI_MODEL)

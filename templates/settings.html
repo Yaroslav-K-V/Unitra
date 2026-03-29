@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Unitra — Settings{% endblock %}
+
+{% block content %}
+<main>
+    <header class="page-header">
+        <h1 class="page-title">Settings</h1>
+        <p class="subtitle">Configure API key, model, and generation options</p>
+    </header>
+
+    <div class="settings-form">
+        <div class="settings-group">
+            <label class="section-label">OpenAI API Key</label>
+            <p class="settings-hint">Used for AI Enhanced mode. Stored in <code>.env</code> file.</p>
+            <div class="settings-row">
+                <input type="password" id="api-key" class="settings-input"
+                       placeholder="{{ 'Key is set ✓' if api_key_set else 'sk-...' }}">
+                <button class="btn-primary" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <label class="section-label">AI Model</label>
+            <p class="settings-hint">Model used when generating tests with AI Enhanced mode.</p>
+            <select id="model-select" class="settings-select">
+                <option value="gpt-5.4-mini" {% if current_model == "gpt-5.4-mini" %}selected{% endif %}>gpt-5.4-mini (default)</option>
+                <option value="gpt-4o-mini" {% if current_model == "gpt-4o-mini" %}selected{% endif %}>gpt-4o-mini</option>
+                <option value="gpt-4o" {% if current_model == "gpt-4o" %}selected{% endif %}>gpt-4o</option>
+            </select>
+        </div>
+
+        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/scripts/output-actions.js"></script>
+<script>
+async function saveSettings() {
+    const api_key = document.getElementById("api-key").value.trim();
+    const model = document.getElementById("model-select").value;
+    const res = await fetch("/settings/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key, model })
+    });
+    const data = await res.json();
+    if (data.ok) showToast("Settings saved!");
+}
+</script>
+{% endblock %}
