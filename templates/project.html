@@ -1,57 +1,44 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Unitra — Project Mode</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" href="/favicon.ico">
-    <script src="/static/scripts/theme.js"></script>
-</head>
-<body>
-    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
-    <div class="container">
-        <a href="/" class="back-link">← Back</a>
-        <header>
-            <div class="logo">
-                <img src="/static/favicon/favicon.svg" width="32" height="32" alt="Unitra">
-                <span class="logo-text">Project Mode</span>
-            </div>
-            <p class="subtitle">Open a folder — generate tests for all .py files at once</p>
-        </header>
+{% extends "base.html" %}
+{% block title %}Unitra — Project Mode{% endblock %}
 
-        <main>
-            <div class="input-section">
-                <div class="actions">
-                    <button class="btn-primary" onclick="openFolder()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M3 7C3 5.9 3.9 5 5 5H9L11 7H19C20.1 7 21 7.9 21 9V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7Z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
-                        </svg>
-                        Open Folder
-                    </button>
-                    <button class="btn-secondary" onclick="openFiles()">Open file(s)</button>
-                </div>
-                <div id="meta" style="margin-top:14px; font-size:13px; color:#6b6560;"></div>
-            </div>
+{% block content %}
+<main>
+    <header class="page-header">
+        <h1 class="page-title">Project Mode</h1>
+        <p class="subtitle">Open a folder — generate tests for all .py files at once</p>
+    </header>
 
-            <div id="result-section" class="result-section hidden">
-                <div class="result-header">
-                    <label class="section-label">Generated tests</label>
-                    <span id="badge" class="meta-badge"></span>
-                </div>
-                <div class="output-actions">
-                    <button id="btn-copy" class="btn-ghost" onclick="copyOutput()">Copy</button>
-                    <button id="btn-save" class="btn-ghost" onclick="saveOutput()">Save as .py</button>
-                    <button id="btn-run" class="btn-ghost" onclick="runTests()">Run Tests</button>
-                </div>
-                <div id="output" class="output"></div>
-                <pre id="run-result" class="run-result"></pre>
-                <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none; margin-top:6px;">Copy result</button>
-            </div>
-        </main>
+    <div class="input-section">
+        <div class="actions">
+            <button class="btn-primary" onclick="openFolder()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 7C3 5.9 3.9 5 5 5H9L11 7H19C20.1 7 21 7.9 21 9V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7Z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+                </svg>
+                Open Folder
+            </button>
+            <button class="btn-secondary" onclick="openFiles()">Open file(s)</button>
+        </div>
+        <div id="meta" style="margin-top:14px; font-size:13px; color:var(--text-muted);"></div>
     </div>
-    <script src="/static/scripts/output-actions.js"></script>
-    <script src="/static/project.js"></script>
-</body>
-</html>
+
+    <div id="result-section" class="result-section hidden">
+        <div class="result-header">
+            <label class="section-label">Generated tests</label>
+            <span id="badge" class="meta-badge"></span>
+        </div>
+        <div class="output-actions">
+            <button id="btn-copy" class="btn-ghost" onclick="copyOutput()">Copy</button>
+            <button id="btn-save" class="btn-ghost" onclick="saveOutput()">Save as .py</button>
+            <button id="btn-run" class="btn-ghost" onclick="runTests()">Run Tests</button>
+        </div>
+        <div id="output" class="output"></div>
+        <pre id="run-result" class="run-result"></pre>
+        <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none; margin-top:6px;">Copy result</button>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/scripts/output-actions.js"></script>
+<script src="/static/project.js"></script>
+{% endblock %}

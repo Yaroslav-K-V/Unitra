@@ -26,14 +26,14 @@ def home():
 
 @pages_bp.route("/quick")
 def quick():
-    return render_template("quick.html")
+    return render_template("quick.html", active_page="quick")
 
 
 @pages_bp.route("/project")
 def project():
-    return render_template("project.html")
+    return render_template("project.html", active_page="project")
 
 
 @pages_bp.route("/ai")
 def ai():
-    return render_template("ai.html")
+    return render_template("ai.html", active_page="ai")

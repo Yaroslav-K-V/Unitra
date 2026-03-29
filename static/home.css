@@ -1,43 +1,52 @@
 .home-container {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     min-height: 90vh;
+    padding-top: 48px;
 }
 
 .home-header {
-    text-align: center;
-    margin-bottom: 56px;
+    margin-bottom: 64px;
 }
 
 .home-header .logo {
-    justify-content: center;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 
 .home-header .logo-text {
-    font-size: 2rem;
+    font-size: 2.4rem;
 }
 
+.home-greeting {
+    font-size: 15px;
+    color: var(--text-muted);
+}
 
-/* Mode grid */
-.mode-grid {
+/* Two-column layout: cards left, recent right */
+.home-body {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
+    grid-template-columns: 1fr 260px;
+    gap: 32px;
+    align-items: start;
     width: 100%;
-    max-width: 820px;
+}
+
+/* Horizontal mode cards */
+.mode-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .mode-card {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    flex-direction: row;
+    align-items: center;
+    gap: 18px;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 24px;
+    padding: 18px 22px;
     text-decoration: none;
     color: inherit;
     transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
@@ -47,7 +56,7 @@
 .mode-card:hover {
     border-color: var(--accent);
     box-shadow: 0 4px 16px rgba(217, 119, 87, 0.12);
-    transform: translateY(-2px);
+    transform: translateY(-1px);
 }
 
 .mode-icon {
@@ -58,19 +67,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+}
+
+.mode-body {
+    flex: 1;
+    min-width: 0;
 }
 
 .mode-body h2 {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    margin-bottom: 6px;
+    margin-bottom: 3px;
     color: var(--text);
 }
 
 .mode-body p {
-    font-size: 13.5px;
+    font-size: 13px;
     color: var(--text-muted);
-    line-height: 1.55;
+    line-height: 1.5;
 }
 
 .mode-body code {
@@ -78,7 +93,7 @@
     background: var(--meta-bg);
     padding: 1px 5px;
     border-radius: 4px;
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--text);
 }
 
@@ -86,20 +101,17 @@
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
-    margin-top: auto;
+    flex-shrink: 0;
 }
 
-/* Recent files */
+/* Recent section (right column) */
 .recent-section {
-    margin-top: 40px;
-    width: 100%;
-    max-width: 820px;
+    position: sticky;
+    top: 24px;
 }
-
-.recent-section.hidden { display: none; }
 
 .recent-title {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
     color: var(--text-faint);
     text-transform: uppercase;
@@ -111,14 +123,14 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
 }
 
 .recent-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 14px;
+    gap: 8px;
+    padding: 8px 10px;
     border-radius: 8px;
     cursor: pointer;
     transition: background 0.12s;
@@ -127,36 +139,34 @@
 .recent-item:hover { background: var(--btn-secondary-bg); }
 
 .recent-name {
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text);
-    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 
 .recent-type-badge {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 500;
     background: var(--tag-bg);
     color: var(--text-faint);
-    padding: 2px 7px;
+    padding: 2px 6px;
     border-radius: 10px;
-    margin-left: auto;
     flex-shrink: 0;
 }
 
 .recent-dir {
-    font-size: 12px;
-    color: var(--text-faint);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
 }
 
-/* Greeting */
-.home-greeting {
-    font-size: 15px;
-    color: var(--text-muted);
-    margin-left: 0;
+.recent-empty {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    padding: 8px 10px;
 }
 
 .tag {

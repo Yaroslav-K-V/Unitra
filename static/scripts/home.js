@@ -7,11 +7,14 @@ async function loadRecent() {
     const res = await fetch("/recent");
     const items = await res.json();
 
-    if (!items.length) return;
-
-    const section = document.getElementById("recent-section");
     const list = document.getElementById("recent-list");
-    section.classList.remove("hidden");
+    const empty = document.getElementById("recent-empty");
+
+    if (!items.length) {
+        if (empty) empty.style.display = "block";
+        return;
+    }
+    if (empty) empty.style.display = "none";
 
     list.innerHTML = "";
     items.forEach(item => {
