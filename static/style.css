@@ -529,8 +529,103 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Run Tests result box */
-.run-result { display: none; margin-top: 12px; padding: 12px 16px; border-radius: 8px; font-size: 12px; font-family: monospace; white-space: pre-wrap; line-height: 1.5; }
-.run-result:not(:empty) { display: block; }
+.run-result { display: block; padding: 12px 16px; border-radius: 8px; font-size: 12px; font-family: monospace; white-space: pre-wrap; line-height: 1.5; flex: 1; overflow-y: auto; min-height: 0; }
 .run-pass  { background: var(--run-pass-bg);  color: var(--run-pass-text);  border: 1px solid var(--run-pass-border); }
 .run-fail  { background: var(--run-fail-bg);  color: var(--run-fail-text);  border: 1px solid var(--run-fail-border); }
 .run-error { background: var(--run-error-bg); color: var(--run-error-text); border: 1px solid var(--run-error-border); }
+.run-result:empty { border: 1px solid var(--border-inner); background: var(--code-bg); color: var(--text-faint); }
+.run-result:empty::before { content: "Run Tests to see results"; font-size: 12px; }
+
+/* ── Tab layout ────────────────────────────────────────── */
+.tab-bar {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+    padding: 7px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    margin-bottom: -1px;
+    font-family: inherit;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+.tab-pane { display: none; flex-direction: column; flex: 1; min-height: 0; }
+.tab-pane.active { display: flex; }
+
+/* Input tab — textarea fills available height */
+.tab-pane[data-tab="input"] {
+    gap: 14px;
+}
+.tab-pane[data-tab="input"] textarea {
+    flex: 1;
+    min-height: 300px;
+    height: auto;
+    resize: none;
+}
+
+/* Output tab — generated tests | run panel side by side */
+.output-split {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+}
+.output-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.output-main .output {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 200px;
+}
+.run-panel {
+    flex: 0 0 320px;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.split-resizer {
+    width: 5px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: var(--border);
+    border-radius: 3px;
+    transition: background 0.15s;
+    margin: 0 2px;
+}
+.split-resizer:hover,
+.split-resizer.dragging { background: var(--accent); }
+.run-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+/* Make page-content fill viewport height so flex children stretch */
+.page-content {
+    display: flex;
+    flex-direction: column;
+}
+main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}

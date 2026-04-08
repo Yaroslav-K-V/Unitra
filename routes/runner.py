@@ -69,7 +69,11 @@ def run_tests():
         f.write(full_code)
         tmp_path = f.name
 
-    cov_args = ["--cov", "--cov-report=term-missing"] if shutil.which("coverage") else []
+    has_cov = subprocess.run(
+        [sys.executable, "-m", "coverage", "--version"],
+        capture_output=True,
+    ).returncode == 0
+    cov_args = ["--cov", "--cov-report=term-missing"] if has_cov else []
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pytest", tmp_path, "-v", "--tb=short", "--no-header"] + cov_args,

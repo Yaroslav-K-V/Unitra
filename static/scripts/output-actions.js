@@ -1,3 +1,34 @@
+document.addEventListener("DOMContentLoaded", () => {
+    const resizer = document.getElementById("split-resizer");
+    if (!resizer) return;
+    const runPanel = resizer.nextElementSibling;
+
+    let startX, startWidth;
+
+    resizer.addEventListener("mousedown", e => {
+        startX = e.clientX;
+        startWidth = runPanel.getBoundingClientRect().width;
+        resizer.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
+        function onMove(e) {
+            const delta = startX - e.clientX;
+            const newWidth = Math.max(180, Math.min(startWidth + delta, window.innerWidth * 0.6));
+            runPanel.style.flex = `0 0 ${newWidth}px`;
+        }
+        function onUp() {
+            resizer.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+        }
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+    });
+});
+
 function showToast(msg) {
     let t = document.getElementById("toast");
     if (!t) {
@@ -66,6 +97,8 @@ async function runTests() {
         if (data.error) {
             resultBox.textContent = data.error;
             resultBox.className = "run-result run-error";
+            const copyBtn = document.getElementById("btn-copy-run");
+            if (copyBtn) copyBtn.style.display = "inline-block";
             return;
         }
 
@@ -75,7 +108,7 @@ async function runTests() {
         resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
 
         const copyBtn = document.getElementById("btn-copy-run");
-        if (copyBtn) copyBtn.style.display = "inline-flex";
+        if (copyBtn) copyBtn.style.display = "inline-block";
     } catch {
         resultBox.textContent = "Connection failed — is the app running?";
         resultBox.className = "run-result run-error";

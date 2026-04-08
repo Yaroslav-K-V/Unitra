@@ -1,3 +1,8 @@
+function switchTab(name) {
+    document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.dataset.tab === name));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const textarea = document.getElementById("code");
 
@@ -63,12 +68,11 @@ async function pickFolder() {
 function generateAI() {
     const code = document.getElementById("code").value;
     const btn = document.querySelector(".btn-primary");
-    const section = document.getElementById("result-section");
     const output = document.getElementById("output");
     const meta = document.getElementById("meta");
 
     if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
-    section.classList.remove("hidden");
+    switchTab("output");
     output.classList.remove("error");
     output.textContent = "";
     meta.textContent = "Streaming…";
@@ -91,6 +95,7 @@ function generateAI() {
     es.addEventListener("done", () => {
         es.close();
         meta.textContent = "";
+        switchTab("output");
         if (btn) { btn.disabled = false; btn.textContent = "Generate with AI"; }
     });
 
@@ -102,9 +107,7 @@ function generateAI() {
 }
 
 function renderResult(data) {
-    const section = document.getElementById("result-section");
     const output = document.getElementById("output");
-    section.classList.remove("hidden");
 
     if (data.error) {
         let msg = data.error;
@@ -121,4 +124,5 @@ function renderResult(data) {
     output.textContent = data.test_code;
     document.getElementById("meta").textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
     if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
+    switchTab("output");
 }

@@ -1,3 +1,8 @@
+function switchTab(name) {
+    document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.dataset.tab === name));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const textarea = document.getElementById("code");
 
@@ -66,11 +71,8 @@ async function generate() {
             return;
         }
 
-        const section = document.getElementById("result-section");
         const output = document.getElementById("output");
         const meta = document.getElementById("meta");
-
-        section.classList.remove("hidden");
 
         if (data.error) {
             output.classList.add("error");
@@ -98,17 +100,17 @@ async function generate() {
         output.textContent = data.test_code;
         meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
+        switchTab("output");
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
     }
 }
 
 function _showError(msg) {
-    const section = document.getElementById("result-section");
     const output = document.getElementById("output");
     const meta = document.getElementById("meta");
-    section.classList.remove("hidden");
     output.classList.add("error");
     output.textContent = msg;
     if (meta) meta.textContent = "";
+    switchTab("output");
 }

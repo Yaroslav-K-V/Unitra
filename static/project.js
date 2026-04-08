@@ -1,3 +1,8 @@
+function switchTab(name) {
+    document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.dataset.tab === name));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("keydown", e => {
         if (e.ctrlKey && e.key === "s") { e.preventDefault(); saveOutput(); }
@@ -33,9 +38,7 @@ async function openFiles() {
     });
 
     const result = await res.json();
-    const section = document.getElementById("result-section");
     const output = document.getElementById("output");
-    section.classList.remove("hidden");
 
     if (result.error) {
         output.textContent = result.error;
@@ -49,6 +52,7 @@ async function openFiles() {
     metaEl.textContent = `${result.files_scanned} files · ${result.functions_found} functions · ${result.classes_found} classes · ${result.tests_generated} tests`;
     document.getElementById("badge").textContent = `${result.tests_generated} tests`;
     if (typeof updateConftestButton === "function") updateConftestButton(result.conftest_code);
+    switchTab("output");
 }
 
 async function scanFolder(folder) {
@@ -84,10 +88,7 @@ async function scanFolder(folder) {
         });
 
         const data = await res.json();
-        const section = document.getElementById("result-section");
         const output = document.getElementById("output");
-
-        section.classList.remove("hidden");
 
         if (data.error) {
             output.textContent = data.error;
@@ -101,6 +102,7 @@ async function scanFolder(folder) {
         metaEl.textContent = `${data.files_scanned} files · ${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         document.getElementById("badge").textContent = `${data.tests_generated} tests`;
         if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
+        switchTab("output");
     } finally {
         if (btn) { btn.disabled = false; }
     }
