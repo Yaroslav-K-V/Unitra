@@ -22,22 +22,25 @@
                 Open Folder
             </button>
             <button class="btn-secondary" onclick="openFiles()">Open file(s)</button>
+            <button class="btn-secondary" onclick="initWorkspace()" id="btn-init-workspace">Init Workspace</button>
         </div>
         <div id="meta" style="font-size:13px; color:var(--text-muted);"></div>
+        <div id="workspace-status" class="workspace-status-card" style="display:none;"></div>
     </div>
 
     <div class="tab-pane" data-tab="output">
         <div class="output-split">
             <div class="output-main">
                 <div class="result-header">
-                    <label class="section-label">Generated tests</label>
+                    <label class="section-label">Workspace output</label>
                     <span id="badge" class="meta-badge"></span>
                 </div>
                 <div class="output-actions">
                     <button id="btn-copy" class="btn-ghost" onclick="copyOutput()">Copy</button>
-                    <button id="btn-save" class="btn-ghost" onclick="saveOutput()">Save as .py</button>
-                    <button id="btn-save-conftest" class="btn-ghost" onclick="saveConftest()" style="display:none;">Save conftest.py</button>
-                    <button id="btn-run" class="btn-ghost" onclick="runTests()">Run Tests</button>
+                    <button id="btn-preview-managed" class="btn-ghost" onclick="runWorkspaceAction('generate', false)">Preview Managed</button>
+                    <button id="btn-write-managed" class="btn-ghost" onclick="runWorkspaceAction('generate', true)">Write Managed</button>
+                    <button id="btn-fix-failures" class="btn-ghost" onclick="runWorkspaceAction('fix-failures', true)">Fix Failures</button>
+                    <button id="btn-run-workspace" class="btn-ghost" onclick="runWorkspaceJob('run-tests')">Run Workspace Tests</button>
                 </div>
                 <div id="output" class="output"></div>
             </div>

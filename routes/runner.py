@@ -1,97 +1,69 @@
 import logging
 import os
-import sys
-import shutil
-import subprocess
-import tempfile
-from flask import Blueprint, jsonify, request, current_app
+import threading
+from flask import Blueprint, jsonify, request
 
-from src.recent import add_recent, get_recent
-from src.config import PYTEST_TIMEOUT
-from routes.generate import SKIP_DIRS, _definitions_only
+from src.application.exceptions import DependencyError, ValidationError
+from src.application.models import RunTestsRequest
+from src.container import get_container
 
 log = logging.getLogger(__name__)
 
 runner_bp = Blueprint("runner", __name__)
+_RECENT_CACHE_LOCK = threading.Lock()
+_RECENT_CACHE = None
+
+
+def _recent_signature() -> tuple:
+    recent_path = get_container().config.recent_path
+    try:
+        return recent_path, os.path.getmtime(recent_path)
+    except OSError:
+        return recent_path, None
+
+
+def _invalidate_recent_cache() -> None:
+    global _RECENT_CACHE
+    with _RECENT_CACHE_LOCK:
+        _RECENT_CACHE = None
 
 
 @runner_bp.route("/recent", methods=["GET"])
 def recent():
-    return jsonify(get_recent())
+    global _RECENT_CACHE
+    signature = _recent_signature()
+    with _RECENT_CACHE_LOCK:
+        if _RECENT_CACHE and _RECENT_CACHE[0] == signature:
+            return jsonify(_RECENT_CACHE[1])
+    items = [item.__dict__ for item in get_container().recent.list_recent()]
+    with _RECENT_CACHE_LOCK:
+        _RECENT_CACHE = (signature, items)
+    return jsonify(items)
 
 
 @runner_bp.route("/recent/add", methods=["POST"])
 def recent_add():
     path = request.get_json().get("path", "")
-    if path:
-        add_recent(path)
+    get_container().recent.add_recent(path)
+    _invalidate_recent_cache()
     return jsonify({"ok": True})
 
 
 @runner_bp.route("/run-tests", methods=["POST"])
 def run_tests():
     body = request.get_json()
-    test_code     = body.get("test_code", "")
-    source_code   = body.get("source_code", "")
-    source_folder = body.get("source_folder", "")
-
-    if not test_code:
-        return jsonify({"error": "No test code provided"}), 400
-
-    work_dir = source_folder if source_folder and os.path.isdir(source_folder) else None
-
-    if not source_code and work_dir:
-        parts = []
-        for root, dirs, files in os.walk(work_dir):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-            for fname in files:
-                if fname.endswith(".py") and not fname.startswith("test_"):
-                    try:
-                        with open(os.path.join(root, fname), encoding="utf-8", errors="ignore") as f:
-                            parts.append(_definitions_only(f.read()))
-                    except Exception as e:
-                        log.warning("Could not read %s: %s", fname, e)
-        source_code = "\n\n".join(parts)
-
-    full_code = (source_code + "\n\n" + test_code) if source_code else test_code
-
-    has_pytest = shutil.which("pytest") or subprocess.run(
-        [sys.executable, "-m", "pytest", "--version"],
-        capture_output=True,
-    ).returncode == 0
-    if not has_pytest:
-        return jsonify({"error": "pytest not found — run: pip install pytest"}), 400
-
-    save_dir = work_dir or current_app.root_path
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8", dir=save_dir
-    ) as f:
-        f.write(full_code)
-        tmp_path = f.name
-
-    has_cov = subprocess.run(
-        [sys.executable, "-m", "coverage", "--version"],
-        capture_output=True,
-    ).returncode == 0
-    cov_args = ["--cov", "--cov-report=term-missing"] if has_cov else []
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", tmp_path, "-v", "--tb=short", "--no-header"] + cov_args,
-            capture_output=True, text=True, timeout=PYTEST_TIMEOUT, cwd=work_dir,
+        result = get_container().test_runner.run_tests(
+            RunTestsRequest(
+                test_code=body.get("test_code", ""),
+                source_code=body.get("source_code", ""),
+                source_folder=body.get("source_folder", ""),
+            )
         )
-        coverage = None
-        for line in (result.stdout + result.stderr).splitlines():
-            if line.strip().startswith("TOTAL"):
-                parts = line.split()
-                if parts:
-                    coverage = parts[-1]
-                break
-        return jsonify({
-            "output": result.stdout + result.stderr,
-            "returncode": result.returncode,
-            "coverage": coverage,
-        })
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": f"Timed out after {PYTEST_TIMEOUT}s"}), 408
-    finally:
-        os.unlink(tmp_path)
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except DependencyError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except TimeoutError as exc:
+        return jsonify({"error": str(exc)}), 408
+    return jsonify(result.__dict__)

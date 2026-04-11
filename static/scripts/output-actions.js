@@ -70,6 +70,74 @@ function updateConftestButton(conftestCode) {
     btn.style.display = conftestCode ? "inline-flex" : "none";
 }
 
+function clearRunResult(resultBox) {
+    resultBox.innerHTML = "";
+}
+
+function appendRunSection(resultBox, title, body, className = "") {
+    if (!body) return;
+    const section = document.createElement("section");
+    section.className = `run-section ${className}`.trim();
+
+    const heading = document.createElement("div");
+    heading.className = "run-section-title";
+    heading.textContent = title;
+
+    const content = document.createElement("pre");
+    content.className = "run-section-body";
+    content.textContent = body;
+
+    section.appendChild(heading);
+    section.appendChild(content);
+    resultBox.appendChild(section);
+}
+
+function summarizePytestOutput(output) {
+    const lines = output.split("\n");
+    const failed = [];
+    let shortSummary = "";
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("FAILED ")) failed.push(trimmed);
+        if (trimmed.startsWith("passed") || trimmed.includes(" failed") || trimmed.includes(" error")) {
+            if (trimmed.startsWith("=") && trimmed.endsWith("=")) continue;
+            shortSummary = trimmed;
+        }
+    }
+
+    return {
+        failed,
+        shortSummary,
+    };
+}
+
+function renderRunResult(data) {
+    const resultBox = document.getElementById("run-result");
+    const output = data.output || "";
+    const summary = summarizePytestOutput(output);
+
+    clearRunResult(resultBox);
+    resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
+
+    const headlineParts = [];
+    headlineParts.push(data.returncode === 0 ? "Tests passed" : "Tests failed");
+    if (summary.shortSummary) headlineParts.push(summary.shortSummary);
+    if (data.coverage) headlineParts.push(`Coverage: ${data.coverage}`);
+    appendRunSection(resultBox, "Summary", headlineParts.join("\n"), "run-summary");
+
+    if (summary.failed.length) {
+        appendRunSection(
+            resultBox,
+            `Failed tests (${summary.failed.length})`,
+            summary.failed.join("\n"),
+            "run-failures"
+        );
+    }
+
+    appendRunSection(resultBox, "Full output", output, "run-log");
+}
+
 async function runTests() {
     const code = document.getElementById("output").textContent;
     if (!code) return;
@@ -79,7 +147,7 @@ async function runTests() {
 
     btn.textContent = "Running...";
     btn.disabled = true;
-    resultBox.textContent = "";
+    clearRunResult(resultBox);
     resultBox.className = "run-result";
 
     const sourceEl = document.getElementById("code");
@@ -95,22 +163,21 @@ async function runTests() {
         const data = await res.json();
 
         if (data.error) {
-            resultBox.textContent = data.error;
+            clearRunResult(resultBox);
+            appendRunSection(resultBox, "Run error", data.error, "run-log");
             resultBox.className = "run-result run-error";
             const copyBtn = document.getElementById("btn-copy-run");
             if (copyBtn) copyBtn.style.display = "inline-block";
             return;
         }
 
-        let output = data.output;
-        if (data.coverage) output += `\n\nCoverage: ${data.coverage}`;
-        resultBox.textContent = output;
-        resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
+        renderRunResult(data);
 
         const copyBtn = document.getElementById("btn-copy-run");
         if (copyBtn) copyBtn.style.display = "inline-block";
     } catch {
-        resultBox.textContent = "Connection failed — is the app running?";
+        clearRunResult(resultBox);
+        appendRunSection(resultBox, "Run error", "Connection failed — is the app running?", "run-log");
         resultBox.className = "run-result run-error";
     } finally {
         btn.disabled = false;

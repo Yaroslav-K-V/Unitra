@@ -46,6 +46,11 @@ document.addEventListener("DOMContentLoaded", () => {
 async function openFile() {
     const data = await pywebview.api.open_file();
     if (data) {
+        await fetch("/recent/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: data.path })
+        });
         document.getElementById("code").value = data.code;
         await generate();
     }

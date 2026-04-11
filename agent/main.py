@@ -2,6 +2,13 @@ import ast
 import logging
 import os
 import re
+import sys
+
+if __package__ in (None, ""):
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
+
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -123,3 +130,20 @@ def stream_agent(source_code: str):
     for chunk in _get_chain().stream({"context": context}):
         if isinstance(chunk, str):
             yield chunk
+
+
+def main(argv=None) -> int:
+    argv = argv or sys.argv[1:]
+    if argv:
+        source_path = argv[0]
+        with open(source_path, encoding="utf-8") as handle:
+            source_code = handle.read()
+    else:
+        source_code = sys.stdin.read()
+
+    print(run_agent(source_code))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", async () => {
     renderGreeting("greeting");
-    await loadRecent();
+    const recentItems = await loadRecent();
+    await loadHomeWorkspaceHints(recentItems);
 });
 
 async function loadRecent() {
@@ -12,7 +13,7 @@ async function loadRecent() {
 
     if (!items.length) {
         if (empty) empty.style.display = "block";
-        return;
+        return items;
     }
     if (empty) empty.style.display = "none";
 
@@ -43,11 +44,17 @@ async function loadRecent() {
         });
         list.appendChild(li);
     });
+    return items;
 }
 
 async function openRecentFile(path) {
     const data = await pywebview.api.open_file_by_path(path);
     if (data) {
+        await fetch("/recent/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: data.path })
+        });
         sessionStorage.setItem("preload_code", data.code);
         sessionStorage.setItem("preload_path", data.path);
         window.location.href = "/quick";
@@ -56,5 +63,39 @@ async function openRecentFile(path) {
 
 async function openRecentFolder(path) {
     sessionStorage.setItem("preload_folder", path);
-    window.location.href = "/project";
+    window.location.href = "/workspace";
+}
+
+async function loadHomeWorkspaceHints(items = []) {
+    const folderItem = items.find(item => item.type === "folder");
+    const agentStatus = document.getElementById("home-agent-status");
+    const runsBox = document.getElementById("home-runs");
+
+    if (!folderItem) {
+        if (agentStatus) agentStatus.textContent = "No workspace opened yet. Open a repo to see token budgets and fallback policy.";
+        return;
+    }
+
+    const statusRes = await fetch(`/workspace/status?root=${encodeURIComponent(folderItem.path)}`);
+    const status = await statusRes.json();
+    if (!status.error) {
+        const profileRes = await fetch(`/workspace/agent-profile?root=${encodeURIComponent(folderItem.path)}`);
+        const profile = await profileRes.json();
+        if (agentStatus) {
+            if (profile.error) {
+                agentStatus.textContent = `Workspace ready at ${status.config.root_path}`;
+            } else {
+                agentStatus.innerHTML = `
+                    <div><strong>${profile.name}</strong> · ${profile.model}</div>
+                    <div>Input budget: ~${profile.input_token_budget} tokens</div>
+                    <div>Output budget: ~${profile.output_token_budget} tokens</div>
+                `;
+            }
+        }
+        if (runsBox) {
+            runsBox.innerHTML = (status.recent_runs || []).length
+                ? status.recent_runs.map(run => `<div class="recent-run-item">${run}</div>`).join("")
+                : "No recorded runs yet for the current workspace.";
+        }
+    }
 }

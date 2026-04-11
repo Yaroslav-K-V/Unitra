@@ -1,6 +1,5 @@
 import os
 import webview
-from src.recent import add_recent
 
 
 class Api:
@@ -12,7 +11,6 @@ class Api:
         if not result:
             return None
         path = result[0]
-        add_recent(path)
         with open(path, "r", encoding="utf-8") as f:
             return {"code": f.read(), "path": path}
 
@@ -26,13 +24,11 @@ class Api:
             return None
         parts = []
         for path in result:
-            add_recent(path)
             with open(path, "r", encoding="utf-8") as f:
                 parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
         return {"code": "\n\n".join(parts), "paths": list(result)}
 
     def open_file_by_path(self, path: str):
-        add_recent(path)
         with open(path, "r", encoding="utf-8") as f:
             return {"code": f.read(), "path": path}
 
@@ -56,6 +52,4 @@ class Api:
         result = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
         if not result:
             return None
-        path = result[0]
-        add_recent(path)
-        return path
+        return result[0]

@@ -1,17 +1,19 @@
 # Unitra
 
-A desktop app for generating Python unit tests — automatically, from your source code.
+A local-first Python test tool with a desktop UI, a workspace-aware CLI, and a terminal console.
 
-Paste a function, scan an entire project, or let an AI write tests for you.
+Use Quick for one-off drafts, Workspace for managed repo flows, and `unitra` for CI, automation, and power-user workflows.
 
 ---
 
 ## Features
 
 - **Quick mode** — paste any Python function or class and get tests instantly
-- **Project mode** — scan a folder, pick files, generate tests for the whole codebase
-- **AI mode** — describe what you want, let an LLM write tests via OpenAI-compatible API
-- **Run Tests** — execute the generated tests with `pytest` directly from the UI
+- **Workspace mode** — open a repo, preview managed test changes, run jobs, and inspect runs
+- **CLI** — workspace, jobs, runs, agents, and CI-safe JSON output via `unitra`
+- **Terminal console** — interactive Textual TUI via `unitra console`
+- **AI fallback** — optional model-assisted generation and failure repair context
+- **Run Tests** — execute generated or workspace tests with `pytest`
 - **Dark mode** — persistent theme toggle (light / dark)
 - **Copy output** — one click to copy generated tests or run results
 - **Recent projects** — quick access to recently scanned folders
@@ -65,10 +67,31 @@ MODEL=gpt-5.4-mini
 
 ---
 
-## Running
+## Running the desktop app
 
 ```bash
 python app.py
+```
+
+## CLI
+
+Installed command:
+
+```bash
+pip install -e .
+unitra --help
+```
+
+Useful examples:
+
+```bash
+unitra workspace init --root /path/to/repo
+unitra workspace status --root /path/to/repo --json
+unitra console --root /path/to/repo
+unitra test generate --root /path/to/repo --repo --dry-run --json
+unitra test run --root /path/to/repo -q
+unitra runs list --root /path/to/repo
+unitra agent show default --root /path/to/repo --json
 ```
 
 ---
@@ -78,14 +101,18 @@ python app.py
 ```
 app.py                  # Entry point: Flask + pywebview startup
 routes/
-  pages.py              # Page routes (home, quick, project, ai)
+  pages.py              # Page routes (home, quick, workspace, info)
   generate.py           # Test generation routes
   runner.py             # Run tests + recent projects
+  workspace.py          # Workspace routes
 src/
+  cli.py                # Reference CLI surface
+  tui/                  # Textual terminal app over shared core
   parser.py             # AST-based Python source parser
   generator.py          # Test code generator
-  recent.py             # Recent projects history
   api.py                # pywebview JS bridge
+  application/          # Core services and models
+  infrastructure/       # Repositories, planners, writers, execution
 agent/
   main.py               # LangChain agent for AI mode
 static/                 # CSS, JS, fonts

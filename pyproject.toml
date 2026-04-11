@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unitra"
+version = "0.1.0"
+description = "Workspace-first Python test tooling with CLI and desktop UI."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "Flask==3.1.3",
+    "pywebview==6.1",
+    "langchain==0.3.28",
+    "langchain-openai==0.3.35",
+    "langchain-core==0.3.83",
+    "python-dotenv==1.2.1",
+    "textual==0.62.0",
+]
+
+[project.scripts]
+unitra = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src", "src.application", "src.infrastructure", "src.tui", "src.tui.screens", "src.tui.widgets", "agent", "routes"]

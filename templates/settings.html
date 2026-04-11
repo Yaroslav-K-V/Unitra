@@ -4,14 +4,15 @@
 {% block content %}
 <main>
     <header class="page-header">
+        <div class="ui-eyebrow">Local config and fallback preferences</div>
         <h1 class="page-title">Settings</h1>
-        <p class="subtitle">Configure API key, model, and generation options</p>
+        <p class="subtitle">Configure local API access, fallback model preferences, and where Unitra keeps its settings.</p>
     </header>
 
     <div class="settings-form">
         <div class="settings-group">
             <label class="section-label">OpenAI API Key</label>
-            <p class="settings-hint">Used for AI Enhanced mode. Stored in <code>.env</code> file.</p>
+            <p class="settings-hint hint-toggle">Used when agent fallback is enabled. Stored locally in <code>.env</code>.</p>
             <div class="settings-row">
                 <input type="password" id="api-key" class="settings-input"
                        placeholder="{{ 'Key is set ✓' if api_key_set else 'sk-...' }}">
@@ -20,13 +21,30 @@
         </div>
 
         <div class="settings-group">
-            <label class="section-label">AI Model</label>
-            <p class="settings-hint">Model used when generating tests with AI Enhanced mode.</p>
+            <label class="section-label">Fallback Model</label>
+            <p class="settings-hint hint-toggle">Used when Unitra needs model assistance beyond the local-first flow.</p>
             <select id="model-select" class="settings-select">
                 <option value="gpt-5.4-mini" {% if current_model == "gpt-5.4-mini" %}selected{% endif %}>gpt-5.4-mini (default)</option>
                 <option value="gpt-4o-mini" {% if current_model == "gpt-4o-mini" %}selected{% endif %}>gpt-4o-mini</option>
                 <option value="gpt-4o" {% if current_model == "gpt-4o" %}selected{% endif %}>gpt-4o</option>
             </select>
+        </div>
+
+        <div class="settings-group">
+            <label class="section-label" for="show-hints-toggle">Interface hints</label>
+            <p class="settings-hint hint-toggle">Hide small helper texts across the app and keep that preference for future launches.</p>
+            <label class="settings-checkbox-row">
+                <input type="checkbox" id="show-hints-toggle" {% if current_show_hints %}checked{% endif %}>
+                <span>Show helper hints and guidance text</span>
+            </label>
+        </div>
+
+        <div class="settings-group settings-info-box">
+            <label class="section-label">Need context?</label>
+            <p class="settings-hint hint-toggle">Open Info for a short explanation of Quick, Workspace, privacy notes, and product identity.</p>
+            <div class="settings-row">
+                <a href="/info" class="btn-secondary settings-link-btn">Open Info</a>
+            </div>
         </div>
 
         <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
@@ -40,13 +58,17 @@
 async function saveSettings() {
     const api_key = document.getElementById("api-key").value.trim();
     const model = document.getElementById("model-select").value;
+    const show_hints = document.getElementById("show-hints-toggle").checked;
     const res = await fetch("/settings/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key, model })
+        body: JSON.stringify({ api_key, model, show_hints })
     });
     const data = await res.json();
-    if (data.ok) showToast("Settings saved!");
+    if (data.ok) {
+        document.body.dataset.showHints = data.show_hints ? "true" : "false";
+        showToast("Settings saved!");
+    }
 }
 </script>
 {% endblock %}

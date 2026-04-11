@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Unitra — Workspace{% endblock %}
+
+{% block content %}
+<main>
+    <header class="page-header">
+        <div class="ui-eyebrow">Managed repo workflow</div>
+        <h1 class="page-title">Workspace</h1>
+        <p class="subtitle">A calmer repository flow for choosing a target, previewing managed changes, and iterating through review and run results.</p>
+    </header>
+
+    <div class="tab-bar workspace-tab-bar">
+        <button class="tab-btn active" data-tab="overview" onclick="switchWorkspaceTab('overview')">
+            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4.5 5.25H10.5V11.25H4.5V5.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M13.5 5.25H19.5V8.25H13.5V5.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M13.5 11.25H19.5V18.75H13.5V11.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4.5 14.25H10.5V18.75H4.5V14.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Overview
+        </button>
+        <button class="tab-btn" data-tab="jobs" onclick="switchWorkspaceTab('jobs')">
+            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8.25 6.75H19.5M8.25 12H19.5M8.25 17.25H19.5M4.5 6.75H4.508V6.758H4.5V6.75ZM4.5 12H4.508V12.008H4.5V12ZM4.5 17.25H4.508V17.258H4.5V17.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Jobs
+        </button>
+        <button class="tab-btn" data-tab="runs" onclick="switchWorkspaceTab('runs')">
+            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 6V12L16.5 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
+            </svg>
+            Runs
+        </button>
+        <button class="tab-btn" data-tab="agents" onclick="switchWorkspaceTab('agents')">
+            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9.75 3.75V5.25M14.25 3.75V5.25M9 14.25H15M8.25 9.75H15.75M7.5 20.25H16.5C18.157 20.25 19.5 18.907 19.5 17.25V8.25C19.5 6.593 18.157 5.25 16.5 5.25H7.5C5.843 5.25 4.5 6.593 4.5 8.25V17.25C4.5 18.907 5.843 20.25 7.5 20.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Agents
+        </button>
+        <button class="tab-btn" data-tab="review" onclick="switchWorkspaceTab('review')">
+            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M16.862 4.487C17.447 3.901 18.397 3.901 18.982 4.487L19.513 5.018C20.099 5.603 20.099 6.553 19.513 7.138L9 17.651L4.5 18.75L5.599 14.25L16.862 4.487Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Review
+        </button>
+    </div>
+
+    <div class="workspace-tab active" data-workspace-tab="overview">
+        <section class="workspace-hero">
+            <div class="workspace-hero-copy">
+                <div class="ui-eyebrow">Initialize once, iterate repeatedly</div>
+                <h2>Open a repository and follow the recommended path</h2>
+                <p>Open a workspace, choose what to target, preview managed changes, then run or fix results only when you need to.</p>
+                <div class="workspace-path-hint hint-toggle">
+                    <strong>Recommended path:</strong> Open repo -> Preview changes -> Run tests -> Fix failures if needed
+                </div>
+            </div>
+            <div class="workspace-hero-actions">
+                <button class="btn-primary" onclick="openFolder()">
+                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Open Workspace Folder
+                </button>
+                <button class="btn-secondary" onclick="initWorkspace()" id="btn-init-workspace">Init Workspace</button>
+                <a href="/info" class="btn-secondary workspace-info-link">Info</a>
+            </div>
+        </section>
+
+        <section class="workspace-grid">
+            <article class="workspace-card workspace-card-wide">
+                <div class="workspace-card-header">
+                    <div class="ui-heading-with-icon">
+                        <div>
+                            <div class="workspace-step-label">Step 1</div>
+                            <h3>Open / current workspace</h3>
+                        </div>
+                    </div>
+                    <span id="workspace-root-pill" class="workspace-pill">No workspace</span>
+                </div>
+                <div id="workspace-status" class="workspace-status-card">Open a repository folder to initialize a workspace and unlock the rest of the review-and-run flow.</div>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div class="ui-heading-with-icon">
+                        <div>
+                            <div class="workspace-step-label">Step 2</div>
+                            <h3>Choose target</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="workspace-scope-list">
+                    <label class="workspace-scope-option"><input type="radio" name="workspace-scope" value="repo" checked> Whole repo</label>
+                    <label class="workspace-scope-option"><input type="radio" name="workspace-scope" value="changed"> Changed files</label>
+                    <label class="workspace-scope-option"><input type="radio" name="workspace-scope" value="folder"> Current folder</label>
+                </div>
+                <p class="workspace-help hint-toggle">Use the whole repo for broad managed writes, or narrow the scope when you want quicker iteration.</p>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div class="ui-heading-with-icon">
+                        <div>
+                            <div class="workspace-step-label">Step 3</div>
+                            <h3>Choose next action</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="workspace-action-grid">
+                    <button class="btn-ghost workspace-action-btn" onclick="runWorkspaceAction('generate', false)">Preview changes</button>
+                    <button class="btn-ghost workspace-action-btn" onclick="runWorkspaceAction('generate', true)">Write tests</button>
+                    <button class="btn-ghost workspace-action-btn" onclick="runWorkspaceJob('run-tests')">Run tests</button>
+                    <button class="btn-ghost workspace-action-btn" onclick="runWorkspaceAction('fix-failures', true)">Fix failures</button>
+                </div>
+            </article>
+        </section>
+    </div>
+
+    <div class="workspace-tab" data-workspace-tab="jobs">
+        <section class="workspace-card">
+            <div class="workspace-card-header">
+                <div class="ui-heading-with-icon">
+                    <h3>Saved jobs</h3>
+                </div>
+            </div>
+            <div id="workspace-jobs" class="workspace-list-empty">Open a workspace to load saved jobs.</div>
+        </section>
+    </div>
+
+    <div class="workspace-tab" data-workspace-tab="runs">
+        <section class="workspace-card">
+            <div class="workspace-card-header">
+                <div class="ui-heading-with-icon">
+                    <h3>Recent runs</h3>
+                </div>
+            </div>
+            <div id="workspace-runs" class="workspace-list-empty">Run a workspace job to build history.</div>
+        </section>
+    </div>
+
+    <div class="workspace-tab" data-workspace-tab="agents">
+        <section class="workspace-card">
+            <div class="workspace-card-header">
+                <div class="ui-heading-with-icon">
+                    <h3>Active agent profile</h3>
+                </div>
+                <span id="workspace-agent-pill" class="workspace-pill">default</span>
+            </div>
+            <div id="workspace-agent-profile" class="workspace-agent-card">Open a workspace to inspect the active profile, budgets, and fallback settings.</div>
+        </section>
+    </div>
+
+    <div class="workspace-tab" data-workspace-tab="review">
+        <div class="output-split workspace-review-layout">
+            <div class="output-main tool-pane-card">
+                <div class="result-header">
+                    <div class="ui-heading-with-icon">
+                        <label class="section-label">Planned changes</label>
+                    </div>
+                    <span id="badge" class="meta-badge"></span>
+                </div>
+                <div class="output-actions workspace-review-actions">
+                    <button id="btn-copy" class="btn-ghost" onclick="copyOutput()">Copy</button>
+                    <button class="btn-ghost" onclick="runWorkspaceAction('generate', false)">Refresh preview</button>
+                    <button class="btn-ghost" onclick="runWorkspaceAction('generate', true)">Write managed</button>
+                    <button class="btn-ghost" onclick="runWorkspaceAction('fix-failures', true)">Fix failures</button>
+                    <button class="btn-ghost" onclick="runWorkspaceJob('run-tests')">Run workspace tests</button>
+                </div>
+                <div id="output" class="output"></div>
+            </div>
+            <div class="split-resizer" id="split-resizer"></div>
+            <div class="run-panel tool-pane-card">
+                <div class="run-panel-header">
+                    <div class="ui-heading-with-icon">
+                        <span class="section-label">Run result</span>
+                    </div>
+                    <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none;">Copy</button>
+                </div>
+                <pre id="run-result" class="run-result"></pre>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/scripts/output-actions.js"></script>
+<script src="/static/project.js"></script>
+{% endblock %}

@@ -1,22 +1,15 @@
 import ast
 import json
 import logging
-import os
-import pathlib
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 log = logging.getLogger(__name__)
 
-from src.parser import parse_functions, parse_classes
-from src.generator import generate_test_module, generate_conftest
-from agent import run_agent, stream_agent
+from src.application.exceptions import ValidationError
+from src.application.models import SaveSettingsRequest
+from src.container import get_container
 
 generate_bp = Blueprint("generate", __name__)
-
-SKIP_DIRS = {
-    ".git", ".venv", "venv", "__pycache__", "node_modules",
-    ".tox", "dist", "build", ".mypy_cache", ".pytest_cache",
-}
 
 _DEF_TYPES = (
     ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
@@ -47,176 +40,74 @@ def _count_tests(test_code: str) -> int:
 @generate_bp.route("/scan-count", methods=["GET"])
 def scan_count():
     folder = request.args.get("folder", "")
-    if not os.path.isdir(folder):
-        return jsonify({"error": "Invalid folder"}), 400
-    count = 0
-    for root, dirs, files in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for fname in files:
-            if fname.endswith(".py") and not fname.startswith("test_"):
-                count += 1
-    return jsonify({"count": count})
+    try:
+        result = get_container().generation.scan_count(folder)
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"count": result.count})
 
 
 @generate_bp.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()
-    source_code = data.get("code", "")
     try:
-        functions = parse_functions(source_code)
-        classes = parse_classes(source_code)
-    except SyntaxError as e:
-        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
-    test_code = generate_test_module(functions, classes)
-    conftest_code = generate_conftest(classes) if classes else ""
-    return jsonify({
-        "test_code": test_code,
-        "conftest_code": conftest_code,
-        "functions_found": len(functions),
-        "classes_found": len(classes),
-        "tests_generated": _count_tests(test_code),
-    })
+        result = get_container().generation.generate_from_code(data.get("code", ""))
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result.__dict__)
 
 
 @generate_bp.route("/generate-files", methods=["POST"])
 def generate_files():
-    paths = request.get_json().get("paths", [])
-    parts = []
-    for path in paths:
-        if not os.path.isfile(path):
-            continue
-        with open(path, encoding="utf-8", errors="replace") as f:
-            parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
-    source = "\n\n".join(parts)
     try:
-        functions = parse_functions(source)
-        classes = parse_classes(source)
-    except SyntaxError as e:
-        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
-    test_code = generate_test_module(functions, classes)
-    conftest_code = generate_conftest(classes) if classes else ""
-    return jsonify({
-        "test_code": test_code,
-        "conftest_code": conftest_code,
-        "functions_found": len(functions),
-        "classes_found": len(classes),
-        "tests_generated": _count_tests(test_code),
-        "files_scanned": len(parts),
-    })
+        result = get_container().generation.generate_from_paths(request.get_json().get("paths", []))
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result.__dict__)
 
 
 @generate_bp.route("/generate-project", methods=["POST"])
 def generate_project():
-    folder = request.get_json().get("folder", "")
-    if not os.path.isdir(folder):
-        return jsonify({"error": "Invalid folder path"}), 400
-
-    all_code = []
-    files_scanned = 0
-    for root, dirs, files in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        for fname in files:
-            if fname.endswith(".py") and not fname.startswith("test_"):
-                with open(os.path.join(root, fname), encoding="utf-8", errors="replace") as f:
-                    all_code.append(f"# --- {fname} ---\n" + f.read())
-                files_scanned += 1
-
-    source = "\n\n".join(all_code)
     try:
-        functions = parse_functions(source)
-        classes = parse_classes(source)
-    except SyntaxError as e:
-        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
-
-    test_code = generate_test_module(functions, classes)
-    conftest_code = generate_conftest(classes) if classes else ""
-    return jsonify({
-        "test_code": test_code,
-        "conftest_code": conftest_code,
-        "functions_found": len(functions),
-        "classes_found": len(classes),
-        "tests_generated": _count_tests(test_code),
-        "files_scanned": files_scanned,
-    })
+        result = get_container().generation.generate_from_folder(request.get_json().get("folder", ""))
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result.__dict__)
 
 
 @generate_bp.route("/settings/save", methods=["POST"])
 def settings_save():
-    data = request.get_json()
-    env_path = pathlib.Path(__file__).parent.parent / ".env"
-
-    existing = {}
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.startswith("#"):
-                k, _, v = line.partition("=")
-                existing[k.strip()] = v.strip()
-
-    if "api_key" in data and data["api_key"]:
-        existing["API_KEY"] = data["api_key"]
-    if "model" in data and data["model"]:
-        existing["OPENAI_MODEL"] = data["model"]
-
-    env_path.write_text(
-        "\n".join(f"{k}={v}" for k, v in existing.items()) + "\n",
-        encoding="utf-8"
+    result = get_container().settings.save_settings(
+        SaveSettingsRequest(
+            api_key=request.get_json().get("api_key", ""),
+            model=request.get_json().get("model", ""),
+            show_hints=request.get_json().get("show_hints"),
+        )
     )
-    return jsonify({"ok": True})
+    return jsonify({"ok": result.saved, "model": result.model, "show_hints": result.show_hints})
 
 
 @generate_bp.route("/generate-ai", methods=["POST"])
 def generate_ai():
     data = request.get_json()
-    source_code = ""
-
-    if "code" in data:
-        source_code = data["code"]
-    elif "paths" in data:
-        parts = []
-        for path in data["paths"]:
-            if os.path.isfile(path):
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    parts.append(f"# --- {os.path.basename(path)} ---\n" + f.read())
-        source_code = "\n\n".join(parts)
-    elif "file" in data:
-        path = data["file"]
-        if not os.path.isfile(path):
-            return jsonify({"error": "File not found"}), 400
-        with open(path, encoding="utf-8") as f:
-            source_code = f.read()
-    elif "folder" in data:
-        folder = data["folder"]
-        if not os.path.isdir(folder):
-            return jsonify({"error": "Folder not found"}), 400
-        parts = []
-        for root, _, files in os.walk(folder):
-            for fname in files:
-                if fname.endswith(".py"):
-                    with open(os.path.join(root, fname), encoding="utf-8", errors="replace") as f:
-                        parts.append(f"# --- {fname} ---\n" + f.read())
-        source_code = "\n\n".join(parts)
-
     try:
-        functions = parse_functions(source_code)
-    except SyntaxError as e:
-        return jsonify({"error": f"SyntaxError: {e.msg} (line {e.lineno})"}), 400
-
-    try:
-        test_code = run_agent(source_code)
-    except EnvironmentError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": f"Agent error: {e}"}), 500
-
-    classes = parse_classes(source_code)
-    conftest_code = generate_conftest(classes) if classes else ""
-    return jsonify({
-        "test_code": test_code,
-        "conftest_code": conftest_code,
-        "functions_found": len(functions),
-        "classes_found": len(classes),
-        "tests_generated": _count_tests(test_code),
-    })
+        if "code" in data:
+            result = get_container().ai_generation.generate_from_code(data["code"])
+        elif "paths" in data:
+            result = get_container().ai_generation.generate_from_paths(data["paths"])
+        elif "file" in data:
+            result = get_container().ai_generation.generate_from_file(data["file"])
+        elif "folder" in data:
+            result = get_container().ai_generation.generate_from_folder(data["folder"])
+        else:
+            raise ValidationError("No input provided")
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except EnvironmentError as exc:
+        return jsonify({"error": str(exc)}), 500
+    except Exception as exc:
+        return jsonify({"error": f"Agent error: {exc}"}), 500
+    return jsonify(result.__dict__)
 
 
 @generate_bp.route("/generate-ai-stream", methods=["GET"])
@@ -225,12 +116,12 @@ def generate_ai_stream():
 
     def generate():
         try:
-            for token in stream_agent(source_code):
+            for token in get_container().ai_generation.stream_from_code(source_code):
                 yield f"data: {json.dumps({'token': token})}\n\n"
-        except EnvironmentError as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': f'Agent error: {e}'})}\n\n"
+        except EnvironmentError as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': f'Agent error: {exc}'})}\n\n"
         yield "event: done\ndata: {}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")

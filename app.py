@@ -27,22 +27,31 @@ from flask import Flask
 from routes.pages    import pages_bp
 from routes.generate import generate_bp
 from routes.runner   import runner_bp
+from routes.workspace import workspace_bp
 from src.api import Api
-from src.config import FLASK_PORT, WINDOW_WIDTH, WINDOW_HEIGHT
+from src.config import load_config
 import webview
 
-app = Flask(__name__)
-app.register_blueprint(pages_bp)
-app.register_blueprint(generate_bp)
-app.register_blueprint(runner_bp)
+
+def create_app() -> Flask:
+    flask_app = Flask(__name__)
+    flask_app.register_blueprint(pages_bp)
+    flask_app.register_blueprint(generate_bp)
+    flask_app.register_blueprint(runner_bp)
+    flask_app.register_blueprint(workspace_bp)
+    return flask_app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":
     import urllib.request
 
+    config = load_config(root_path=os.path.dirname(__file__))
     api = Api()
 
-    flask_thread = threading.Thread(target=lambda: app.run(port=FLASK_PORT, use_reloader=False))
+    flask_thread = threading.Thread(target=lambda: app.run(port=config.flask_port, use_reloader=False))
     flask_thread.daemon = True
     flask_thread.start()
 
@@ -50,18 +59,25 @@ if __name__ == "__main__":
     loading_html = open(os.path.join(os.path.dirname(__file__), "templates", "loading.html"), encoding="utf-8").read()
     loading_html = loading_html.replace('<script src="/static/scripts/gsap.min.js"></script>', f"<script>{gsap_js}</script>")
 
-    window = webview.create_window("Unitra", html=loading_html, js_api=api, width=WINDOW_WIDTH, height=WINDOW_HEIGHT, background_color="#f5f0e8")
+    window = webview.create_window(
+        "Unitra",
+        html=loading_html,
+        js_api=api,
+        width=config.window_width,
+        height=config.window_height,
+        background_color="#f5f0e8",
+    )
 
     def on_loading_shown():
         window.events.loaded -= on_loading_shown
         while True:
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{FLASK_PORT}/health")
+                urllib.request.urlopen(f"http://127.0.0.1:{config.flask_port}/health")
                 break
             except Exception:
                 time.sleep(0.1)
         time.sleep(1.0)
-        window.load_url(f"http://127.0.0.1:{FLASK_PORT}")
+        window.load_url(f"http://127.0.0.1:{config.flask_port}")
 
     window.events.loaded += on_loading_shown
     icon_name = "favicon.ico" if sys.platform == "win32" else "favicon-32x32.png"
