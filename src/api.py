@@ -3,6 +3,14 @@ import webview
 
 
 class Api:
+    def maximize_window(self):
+        if webview.windows:
+            webview.windows[0].maximize()
+
+    def toggle_fullscreen(self):
+        if webview.windows:
+            webview.windows[0].toggle_fullscreen()
+
     def open_file(self):
         result = webview.windows[0].create_file_dialog(
             webview.FileDialog.OPEN,

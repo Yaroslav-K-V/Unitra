@@ -216,6 +216,33 @@ def test_llm_fallback_context_is_budgeted_to_failing_tests(tmp_path):
     assert len(context["test_snippets"]) == 1
 
 
+def test_llm_fallback_context_handles_tiny_budget_without_hanging(tmp_path):
+    root, workspace_repo, _, _ = _make_workspace(tmp_path)
+    workspace = workspace_repo.load_config()
+    orchestrator = AgentOrchestrator(SourceLoader(SKIP_DIRS), TestFilePlanner())
+    generated = (
+        "# Managed by Unitra. Do not edit generated sections by hand.\n\n"
+        "def test_add_basic():\n    result = add(1.0, 1.0)\n    assert result is not None\n\n"
+        "@pytest.mark.parametrize(\"a, b\", [(0.0, 0.0), (-1.0, -1.0), (1000000.0, 1000000.0)])\n"
+        "def test_divide_parametrize(a, b):\n    result = divide(a, b)\n    assert result is not None\n\n"
+        f"{USER_BLOCK_BEGIN}\n"
+        "def test_custom():\n    assert True\n"
+        f"{USER_BLOCK_END}\n"
+    )
+    failure = orchestrator.analyze_failures(
+        "FAILED tests/unit/pkg/test_math_utils.py::test_divide_parametrize[0.0-0.0] - ValueError: Cannot divide by zero",
+        [type("Plan", (), {"source_path": os.path.join(str(root), "pkg", "math_utils.py"), "test_path": "tests/unit/pkg/test_math_utils.py", "generated_content": generated})()],
+        workspace,
+        AgentProfile(name="tiny", model="gpt-5.4-mini", input_token_budget=32, output_token_budget=80),
+    )[0]
+    context = failure.llm_fallback_context
+    assert context is not None
+    assert context["truncated"] is True
+    assert context["estimated_input_tokens"] <= 32
+    assert context["source_snippets"] == []
+    assert context["test_snippets"] == []
+
+
 def test_generate_preview_uses_cached_computation_on_repeat(tmp_path):
     root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
     source_loader = SourceLoader(SKIP_DIRS)

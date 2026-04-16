@@ -37,6 +37,8 @@ class AppConfig:
     max_recent: int
     window_width: int
     window_height: int
+    window_min_width: int
+    window_min_height: int
     recent_path: str
     env_path: str
     show_hints: bool
@@ -62,8 +64,10 @@ def load_config(root_path: Optional[str] = None) -> AppConfig:
         ai_max_context=int(read_setting("AI_MAX_CONTEXT", "8000")),
         pytest_timeout=int(read_setting("PYTEST_TIMEOUT", "30")),
         max_recent=int(read_setting("MAX_RECENT", "8")),
-        window_width=int(read_setting("WINDOW_WIDTH", "1000")),
-        window_height=int(read_setting("WINDOW_HEIGHT", "700")),
+        window_width=int(read_setting("WINDOW_WIDTH", "1440")),
+        window_height=int(read_setting("WINDOW_HEIGHT", "920")),
+        window_min_width=int(read_setting("WINDOW_MIN_WIDTH", "1280")),
+        window_min_height=int(read_setting("WINDOW_MIN_HEIGHT", "820")),
         recent_path=os.path.join(base_dir, "data", "recent.json"),
         env_path=env_path,
         show_hints=read_setting("SHOW_HINTS", "1") != "0",

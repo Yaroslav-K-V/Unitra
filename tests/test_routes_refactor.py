@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 flask = pytest.importorskip("flask")
@@ -100,7 +102,12 @@ class StubContainer:
 
 
 def _build_app():
-    app = flask.Flask(__name__)
+    app = flask.Flask(
+        __name__,
+        root_path=os.getcwd(),
+        template_folder="templates",
+        static_folder="static",
+    )
     app.register_blueprint(generate_bp)
     app.register_blueprint(runner_bp)
     app.register_blueprint(workspace_bp)
@@ -158,6 +165,94 @@ def test_workspace_status_route_uses_service(monkeypatch):
     assert response.get_json()["jobs"] == ["generate-tests"]
 
 
+def test_workspace_runs_route_uses_service(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+    response = client.get("/workspace/runs?root=/tmp/project&limit=3")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload[0]["history_id"] == "abc"
+    assert payload[0]["job_name"] == "run-tests"
+
+
+def test_recent_route_supports_explicit_recent_path(monkeypatch, tmp_path):
+    import routes.runner as runner_module
+
+    recent_path = tmp_path / "recent.json"
+    recent_path.write_text("[]", encoding="utf-8")
+
+    container = StubContainer()
+    container.config = type("Config", (), {"root_path": ".", "recent_path": str(recent_path)})()
+
+    monkeypatch.setattr(runner_module, "get_container", lambda: container)
+    runner_module._RECENT_CACHE = None
+
+    client = _build_app().test_client()
+    response = client.get("/recent")
+
+    assert response.status_code == 200
+    assert response.get_json()[0]["path"] == "/tmp/a.py"
+
+
+def test_workspace_runs_route_prefers_workspace_history_service(monkeypatch):
+    import routes.workspace as workspace_module
+
+    class HistoryWorkspace(StubContainer.Workspace):
+        def __init__(self):
+            self.list_calls = 0
+            self.get_calls = 0
+
+        def list_runs(self, limit=20):
+            self.list_calls += 1
+            return ["20260101000000000000"][:limit]
+
+        def get_run(self, history_id):
+            self.get_calls += 1
+            return {
+                "job_name": "run-tests",
+                "mode": "run-tests",
+                "target_scope": "repo",
+                "planned_files": [],
+                "written_files": [],
+                "run_output": "ok",
+                "run_returncode": 0,
+                "run_coverage": "90%",
+                "llm_fallback_contexts": [],
+            }
+
+    container = StubContainer()
+    container.workspace = HistoryWorkspace()
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: container)
+    monkeypatch.setattr(workspace_module, "_workspace_signature", lambda root: ("stable", root))
+    workspace_module._PAYLOAD_CACHE.clear()
+
+    client = _build_app().test_client()
+    first = client.get("/workspace/runs?root=/tmp/project&limit=3")
+    second = client.get("/workspace/runs?root=/tmp/project&limit=3")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    payload = first.get_json()
+    assert payload[0]["history_id"] == "20260101000000000000"
+    assert payload[0]["run"]["coverage"] == "90%"
+    assert set(payload[0].keys()) >= {
+        "history_id",
+        "job_name",
+        "mode",
+        "target_scope",
+        "planned_files",
+        "written_files",
+        "run",
+        "llm_fallback_contexts",
+        "fallback_context_summary",
+    }
+    assert container.workspace.list_calls == 1
+    assert container.workspace.get_calls == 1
+
+
 def test_workspace_generate_route_uses_service(monkeypatch):
     import routes.workspace as workspace_module
 
@@ -180,6 +275,41 @@ def test_ai_redirects_to_workspace():
     response = client.get("/ai")
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/workspace")
+
+
+def test_home_page_exposes_workspace_contract_targets():
+    client = _build_app().test_client()
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="recent-list"' in html
+    assert 'id="home-agent-status"' in html
+    assert 'id="home-runs"' in html
+    assert "/static/scripts/workspace-shared.js" in html
+
+
+def test_workspace_page_exposes_feedback_and_workspace_panels():
+    client = _build_app().test_client()
+    response = client.get("/workspace")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'id="workspace-feedback"' in html
+    assert 'id="workspace-agent-profile"' in html
+    assert 'id="workspace-runs"' in html
+    assert "data-workspace-action" in html
+
+
+def test_info_page_exposes_unitra_overview():
+    client = _build_app().test_client()
+    response = client.get("/info")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Product overview" in html
+    assert "What Unitra is" in html
+    assert "Local-first guarantees" in html
 
 
 def test_workspace_container_cache_reuses_container(monkeypatch):

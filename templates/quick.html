@@ -2,45 +2,19 @@
 {% block title %}Unitra — Quick Mode{% endblock %}
 
 {% block content %}
-<main>
-    <header class="page-header">
+<main class="quick-screen">
+    <header class="page-header quick-page-header">
         <div class="ui-eyebrow">Scratchpad workflow</div>
         <h1 class="page-title">Quick</h1>
         <p class="subtitle">Paste a Python snippet, open a file, and generate or run tests without creating a workspace.</p>
     </header>
 
-    <div class="tab-bar">
-        <button class="tab-btn active" data-tab="input" onclick="switchTab('input')">
-            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M8.25 6L3.75 12L8.25 18" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M15.75 6L20.25 12L15.75 18" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Input
-        </button>
-        <button class="tab-btn" data-tab="output" onclick="switchTab('output')">
-            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M7.5 7.5H16.5M7.5 12H16.5M7.5 16.5H12.75M6 19.5H18C19.243 19.5 20.25 18.493 20.25 17.25V6.75C20.25 5.507 19.243 4.5 18 4.5H6C4.757 4.5 3.75 5.507 3.75 6.75V17.25C3.75 18.493 4.757 19.5 6 19.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Output
-        </button>
-    </div>
-
-    <div class="tab-pane active quick-tab-pane" data-tab="input">
-        <section class="quick-input-card">
-            <div class="ui-section-header">
+    <div class="quick-layout">
+        <section class="quick-input-card quick-editor-panel">
+            <div class="ui-section-header quick-panel-header">
                 <div>
-                    <div class="ui-heading-with-icon">
-                        <div class="ui-icon-chip">
-                            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M8.25 6L3.75 12L8.25 18" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M15.75 6L20.25 12L15.75 18" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <label class="section-label">Your Python code</label>
-                            <p class="quick-card-subtitle hint-toggle">Use Quick for single-file drafts, experiments, and local runs. Switch to Workspace when you want a repository-level review-and-run flow.</p>
-                        </div>
-                    </div>
+                    <label class="section-label">Your Python code</label>
+                    <p class="quick-card-subtitle hint-toggle">Quick stays intentionally lightweight. Use Workspace when you want managed repo review, writes, and reruns.</p>
                 </div>
                 <div class="examples-row">
                     <span class="examples-label">Examples:</span>
@@ -65,11 +39,9 @@
                 </button>
             </div>
         </section>
-    </div>
 
-    <div class="tab-pane quick-tab-pane" data-tab="output">
-        <div class="output-split">
-            <div class="output-main tool-pane-card">
+        <section class="quick-results-column">
+            <div class="output-main tool-pane-card quick-output-panel">
                 <div class="result-header">
                     <div class="ui-heading-with-icon">
                         <div class="ui-icon-chip ui-icon-chip-subtle">
@@ -89,8 +61,8 @@
                 </div>
                 <div id="output" class="output"></div>
             </div>
-            <div class="split-resizer" id="split-resizer"></div>
-            <div class="run-panel tool-pane-card">
+
+            <div class="run-panel tool-pane-card quick-run-panel">
                 <div class="run-panel-header">
                     <div class="ui-heading-with-icon">
                         <div class="ui-icon-chip ui-icon-chip-subtle">
@@ -105,7 +77,7 @@
                 </div>
                 <pre id="run-result" class="run-result"></pre>
             </div>
-        </div>
+        </section>
     </div>
 </main>
 {% endblock %}

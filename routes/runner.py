@@ -14,8 +14,21 @@ _RECENT_CACHE_LOCK = threading.Lock()
 _RECENT_CACHE = None
 
 
+def _recent_cache_path() -> str:
+    config = getattr(get_container(), "config", None)
+    recent_path = getattr(config, "recent_path", "")
+    if recent_path:
+        return recent_path
+    root_path = getattr(config, "root_path", "")
+    if root_path:
+        return os.path.join(root_path, "data", "recent.json")
+    return ""
+
+
 def _recent_signature() -> tuple:
-    recent_path = get_container().config.recent_path
+    recent_path = _recent_cache_path()
+    if not recent_path:
+        return ("recent", None)
     try:
         return recent_path, os.path.getmtime(recent_path)
     except OSError:

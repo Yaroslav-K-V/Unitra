@@ -149,3 +149,17 @@ def test_tui_actions_show_agent_and_run_quick_flow():
     assert quick.payload["functions_found"] == 1
     assert run.payload["run"]["coverage"] == "100%"
 
+
+def test_workspace_actions_return_error_without_active_workspace():
+    session = SessionState()
+    actions = TuiActions(
+        workspace_container_loader=lambda root: StubWorkspaceContainer(),
+        quick_container_loader=lambda: StubQuickContainer(),
+    )
+
+    result = actions.list_agents(session)
+
+    assert result.ok is False
+    assert result.action == "agent.list"
+    assert "Open or initialize a workspace first" in result.error
+    assert session.assistant_notes[-1] == result.error

@@ -6,9 +6,38 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: core
+            tests: >-
+              tests/test_generator.py
+              tests/test_generator_internals.py
+              tests/test_parser.py
+              tests/test_parser_extra.py
+              tests/test_recent.py
+              tests/test_route_helpers.py
+              tests/test_services.py
+          - name: workspace
+            tests: >-
+              tests/test_cli_workspace.py
+              tests/test_routes_refactor.py
+              tests/test_workspace_tooling.py
+          - name: cli-and-tui
+            tests: >-
+              tests/test_cli.py
+              tests/test_cli_console.py
+              tests/test_tui_actions.py
+              tests/test_tui_state.py
 
     steps:
       - uses: actions/checkout@v4
@@ -17,9 +46,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Run ${{ matrix.shard.name }} tests
+        run: pytest -v ${{ matrix.shard.tests }}

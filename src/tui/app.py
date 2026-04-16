@@ -239,7 +239,22 @@ if TEXTUAL_AVAILABLE:
             }
             handler = handlers.get(button_id)
             if handler is not None:
-                handler()
+                try:
+                    handler()
+                except Exception as exc:
+                    action_prefix = {
+                        "agents": "agent",
+                        "runs": "runs",
+                        "quick": "quick",
+                        "review": "test",
+                    }.get(self.session.current_screen, "workspace")
+                    self._run_action(
+                        ScreenActionResult(
+                            action=f"{action_prefix}.error",
+                            ok=False,
+                            error=str(exc),
+                        )
+                    )
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "command-input":
@@ -367,7 +382,7 @@ if TEXTUAL_AVAILABLE:
 
         def _run_action(self, result: ScreenActionResult) -> None:
             self.last_result = result
-            text = self._render_payload(result.payload)
+            text = self._render_result(result)
             if result.action.startswith("quick."):
                 self.query_one("#quick-output", Static).update(text)
             elif result.action.startswith("runs."):
@@ -395,6 +410,13 @@ if TEXTUAL_AVAILABLE:
         @staticmethod
         def _render_payload(payload: dict) -> str:
             return json.dumps(payload, indent=2)
+
+        def _render_result(self, result: ScreenActionResult) -> str:
+            if result.error:
+                return result.error
+            if result.payload:
+                return self._render_payload(result.payload)
+            return result.message or result.action
 
         def _notify_text(self, text: str) -> None:
             self.query_one("#workspace-output", Static).update(text)

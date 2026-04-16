@@ -239,18 +239,11 @@ class AgentOrchestrator:
             "expected_output_tokens": profile.output_token_budget,
             "truncated": False,
         }
-        context["estimated_input_tokens"] = self._estimate_tokens(str(context))
-        while context["estimated_input_tokens"] > profile.input_token_budget and (context["source_snippets"] or context["test_snippets"]):
-            context["truncated"] = True
-            if len(context["test_snippets"]) > 1:
-                context["test_snippets"] = context["test_snippets"][:-1]
-            elif len(context["source_snippets"]) > 1:
-                context["source_snippets"] = context["source_snippets"][:-1]
-            elif context["source_snippets"]:
-                context["source_snippets"][0] = context["source_snippets"][0][: max(200, len(context["source_snippets"][0]) // 2)]
-            elif context["test_snippets"]:
-                context["test_snippets"][0] = context["test_snippets"][0][: max(200, len(context["test_snippets"][0]) // 2)]
-            context["estimated_input_tokens"] = self._estimate_tokens(str(context))
+        context["estimated_input_tokens"] = self._estimate_context_tokens(context)
+        while context["estimated_input_tokens"] > profile.input_token_budget:
+            if not self._trim_fallback_context(context):
+                break
+            context["estimated_input_tokens"] = self._estimate_context_tokens(context)
         return context
 
     def _extract_relevant_source_snippets(self, source_code: str, failure_tests: List[str]) -> List[str]:
@@ -292,8 +285,60 @@ class AgentOrchestrator:
         return name.split("_")[0]
 
     @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        return max(1, len(text) // 4)
+    def _estimate_context_tokens(context: dict) -> int:
+        parts = [
+            context.get("source_path", ""),
+            context.get("test_path", ""),
+            "\n".join(context.get("failure_tests", [])),
+            "\n".join(context.get("recommendations", [])),
+            "\n\n".join(context.get("source_snippets", [])),
+            "\n\n".join(context.get("test_snippets", [])),
+            str(context.get("expected_output_tokens", "")),
+        ]
+        return max(1, sum(len(part) for part in parts if part) // 4)
+
+    @staticmethod
+    def _trim_fallback_context(context: dict) -> bool:
+        context["truncated"] = True
+
+        for key in ("test_snippets", "source_snippets"):
+            snippets = context.get(key, [])
+            if len(snippets) > 1:
+                context[key] = snippets[:-1]
+                return True
+
+        for key in ("test_snippets", "source_snippets"):
+            snippets = context.get(key, [])
+            if not snippets:
+                continue
+            current = snippets[0]
+            if len(current) > 80:
+                next_length = max(80, len(current) // 2)
+                if next_length < len(current):
+                    context[key][0] = current[:next_length]
+                    return True
+            context[key] = []
+            return True
+
+        for key in ("recommendations", "failure_tests"):
+            items = context.get(key, [])
+            if len(items) > 1:
+                context[key] = items[:1]
+                return True
+
+        for key in ("source_path", "test_path"):
+            value = context.get(key, "")
+            basename = os.path.basename(value)
+            if basename and basename != value:
+                context[key] = basename
+                return True
+
+        expected_output_tokens = int(context.get("expected_output_tokens", 0) or 0)
+        if expected_output_tokens > 32:
+            context["expected_output_tokens"] = max(32, expected_output_tokens // 2)
+            return True
+
+        return False
 
 
 class WorkspaceJobService:

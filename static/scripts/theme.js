@@ -1,6 +1,12 @@
 (function () {
     const saved = localStorage.getItem("theme") || "light";
     document.documentElement.setAttribute("data-theme", saved);
+    document.addEventListener("DOMContentLoaded", () => {
+        const toggle = document.getElementById("theme-toggle");
+        if (toggle) {
+            toggle.textContent = saved === "dark" ? "☀" : "◐";
+        }
+    });
 })();
 
 function toggleTheme() {

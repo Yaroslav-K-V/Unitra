@@ -54,6 +54,9 @@ class TuiActions:
         return result
 
     def validate_workspace(self, session: SessionState) -> ScreenActionResult:
+        missing = self._require_workspace(session, "workspace.validate")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         status = serialize_workspace_status(container.workspace.validate())
         result = ScreenActionResult(
@@ -66,6 +69,9 @@ class TuiActions:
         return result
 
     def run_job(self, session: SessionState, name: str, target_value: str = "", output_policy: str = "") -> ScreenActionResult:
+        missing = self._require_workspace(session, "job.run")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         result = container.jobs.run_job(name, target_value=target_value, output_policy=output_policy)
         payload = serialize_job_result(result, model=container.config.ai_model)
@@ -96,6 +102,9 @@ class TuiActions:
         pytest_args: Optional[List[str]] = None,
         timeout: Optional[int] = None,
     ) -> ScreenActionResult:
+        missing = self._require_workspace(session, "test.run")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         result = container.jobs.run_tests(pytest_args=pytest_args, timeout=timeout)
         payload = serialize_job_result(result, model=container.config.ai_model)
@@ -109,6 +118,9 @@ class TuiActions:
         return action_result
 
     def list_runs(self, session: SessionState, limit: int = 20) -> ScreenActionResult:
+        missing = self._require_workspace(session, "runs.list")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         result = ScreenActionResult(
             action="runs.list",
@@ -120,6 +132,9 @@ class TuiActions:
         return result
 
     def show_run(self, session: SessionState, history_id: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "runs.show")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         record = container.workspace.get_run(history_id)
         payload = serialize_run_history_record(history_id, record, model=container.config.ai_model)
@@ -133,6 +148,9 @@ class TuiActions:
         return result
 
     def list_agents(self, session: SessionState) -> ScreenActionResult:
+        missing = self._require_workspace(session, "agent.list")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         profiles = [serialize_agent_profile(item) for item in container.workspace.list_agent_profiles()]
         result = ScreenActionResult(
@@ -145,6 +163,9 @@ class TuiActions:
         return result
 
     def show_agent(self, session: SessionState, name: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "agent.show")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         profile = serialize_agent_profile(container.workspace.get_agent_profile(name))
         session.selected_agent_profile = profile["name"]
@@ -158,6 +179,9 @@ class TuiActions:
         return result
 
     def list_jobs(self, session: SessionState) -> ScreenActionResult:
+        missing = self._require_workspace(session, "job.list")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         jobs = [serialize_job_definition(item) for item in container.workspace.list_jobs()]
         result = ScreenActionResult(
@@ -170,6 +194,9 @@ class TuiActions:
         return result
 
     def show_job(self, session: SessionState, name: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "job.show")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         job = serialize_job_definition(container.workspace.get_job(name))
         result = ScreenActionResult(
@@ -240,6 +267,9 @@ class TuiActions:
         )
 
     def _targeted_action(self, session: SessionState, mode: str, write: bool) -> ScreenActionResult:
+        missing = self._require_workspace(session, f"test.{mode}")
+        if missing:
+            return missing
         container = self._workspace_container(session)
         target = session.selected_target.to_test_target(session.active_workspace_root)
         if mode == "generate":
@@ -257,6 +287,18 @@ class TuiActions:
         )
         session.remember_result(action_result)
         return action_result
+
+    @staticmethod
+    def _require_workspace(session: SessionState, action: str) -> Optional[ScreenActionResult]:
+        if session.active_workspace_root:
+            return None
+        result = ScreenActionResult(
+            action=action,
+            ok=False,
+            error="No active workspace selected. Open or initialize a workspace first.",
+        )
+        session.remember_result(result)
+        return result
 
     def _workspace_container(self, session: SessionState):
         if not session.active_workspace_root:

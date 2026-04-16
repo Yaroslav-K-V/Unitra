@@ -7,7 +7,12 @@ from src.application.exceptions import DependencyError, ValidationError
 from src.application.workspace_models import TestTarget
 from src.config import load_config
 from src.container import build_container
-from src.serializers import serialize_agent_profile, serialize_job_result, serialize_workspace_status
+from src.serializers import (
+    serialize_agent_profile,
+    serialize_job_result,
+    serialize_run_history_record,
+    serialize_workspace_status,
+)
 
 workspace_bp = Blueprint("workspace", __name__)
 
@@ -81,6 +86,36 @@ def _job_payload(result):
     return payload
 
 
+def _workspace_run_ids(container, limit: int):
+    workspace = container.workspace
+    if hasattr(workspace, "list_runs"):
+        return list(workspace.list_runs(limit=limit))
+    if hasattr(workspace, "status"):
+        status = workspace.status()
+        return list((getattr(status, "recent_runs", []) or [])[:limit])
+    return []
+
+
+def _workspace_run_payload(container, history_id: str):
+    workspace = container.workspace
+    if hasattr(workspace, "get_run"):
+        payload = workspace.get_run(history_id)
+    else:
+        payload = {
+            "job_name": "run-tests",
+            "mode": "run-tests",
+            "target_scope": "repo",
+            "planned_files": [],
+            "written_files": [],
+            "run_output": "",
+            "run_returncode": None,
+            "run_coverage": None,
+            "llm_fallback_contexts": [],
+        }
+    model = getattr(container.config, "ai_model", "")
+    return serialize_run_history_record(history_id, payload, model=model)
+
+
 def _target_from_body(body: dict, root_path: str) -> TestTarget:
     return TestTarget(
         scope=body.get("scope", "repo"),
@@ -123,6 +158,29 @@ def workspace_jobs():
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/runs", methods=["GET"])
+def workspace_runs():
+    root = request.args.get("root", ".")
+    limit = request.args.get("limit", default=5, type=int)
+    try:
+        payload = _cached_payload(
+            root,
+            f"runs:{limit}",
+            lambda: _workspace_runs_for_root(root, limit),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload)
+
+
+def _workspace_runs_for_root(root: str, limit: int):
+    container = _container_for_root(root)
+    return [
+        _workspace_run_payload(container, history_id)
+        for history_id in _workspace_run_ids(container, limit)
+    ]
 
 
 @workspace_bp.route("/workspace/agent-profile", methods=["GET"])

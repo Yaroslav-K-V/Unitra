@@ -10,60 +10,55 @@
     <link rel="icon" href="/favicon.ico">
     <script src="/static/scripts/theme.js"></script>
     <script src="/static/scripts/brand-bubble.js"></script>
+    <script src="/static/scripts/window-controls.js"></script>
+    <script src="/static/scripts/workspace-shared.js"></script>
+    {% block head_extra %}{% endblock %}
 </head>
 <body data-show-hints="{{ 'true' if show_hints else 'false' }}">
-    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
+    <div class="app-shell">
+        <header class="app-topbar">
+            <div class="app-topbar-inner">
+                <a href="/" class="app-brand">
+                    <span class="brand-mark" aria-hidden="true">
+                        <span class="brand-mark-glow"></span>
+                        <img src="/static/favicon/favicon.svg" width="26" height="26" alt="Unitra">
+                    </span>
+                    <span class="app-brand-copy">
+                        <span class="app-brand-name">Unitra</span>
+                        <span class="app-brand-tag">Local-first Python test tool</span>
+                    </span>
+                    <span class="brand-bubble" data-bubble-context="header" role="presentation"></span>
+                </a>
 
-    <aside class="sidebar">
-        <a href="/" class="sidebar-logo">
-            <span class="brand-mark" aria-hidden="true">
-                <span class="brand-mark-glow"></span>
-                <img src="/static/favicon/favicon.svg" width="26" height="26" alt="Unitra">
-            </span>
-            <span class="sidebar-logo-text">Unitra</span>
-            <span class="brand-bubble" data-bubble-context="sidebar" role="presentation"></span>
-        </a>
-        <nav class="sidebar-nav">
-            <a href="/" class="sidebar-link {% if active_page == 'home' %}active{% endif %}">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M3 10.75L12 3l9 7.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M5.25 9.5V20.25H18.75V9.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M9.75 20.25V14.25H14.25V20.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>Home</span>
-            </a>
-            <a href="/quick" class="sidebar-link {% if active_page == 'quick' %}active{% endif %}">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>Quick</span>
-            </a>
-            <a href="/workspace" class="sidebar-link {% if active_page == 'workspace' %}active{% endif %}">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>Workspace</span>
-            </a>
-            <a href="/info" class="sidebar-link {% if active_page == 'info' %}active{% endif %}">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 8.25H12.008V8.258H12V8.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M11.25 11.25H12V15.75H12.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
-                </svg>
-                <span>Info</span>
-            </a>
-        </nav>
-        <a href="/settings" class="sidebar-link sidebar-settings {% if active_page == 'settings' %}active{% endif %}" style="margin-top: auto;">
-            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M10.5 3.969C11.408 3.348 12.592 3.348 13.5 3.969L14.2 4.447C14.626 4.738 15.145 4.858 15.654 4.783L16.492 4.661C17.578 4.503 18.588 5.121 18.973 6.149L19.27 6.942C19.451 7.425 19.806 7.823 20.267 8.057L21.023 8.44C22.003 8.936 22.515 10.004 22.273 11.076L22.086 11.907C21.972 12.411 22.041 12.939 22.283 13.4L22.681 14.156C23.197 15.137 22.985 16.302 22.156 17.031L21.514 17.596C21.124 17.939 20.873 18.413 20.807 18.928L20.699 19.775C20.559 20.863 19.693 21.671 18.6 21.738L17.75 21.79C17.233 21.822 16.742 22.03 16.359 22.379L15.73 22.952C14.921 23.689 13.742 23.811 12.804 23.258L12.073 22.826C11.628 22.563 11.084 22.447 10.543 22.496L9.656 22.577C8.553 22.678 7.509 22.08 7.083 21.058L6.753 20.267C6.552 19.786 6.174 19.393 5.694 19.198L4.905 18.877C3.885 18.462 3.251 17.428 3.333 16.323L3.399 15.437C3.439 14.899 3.314 14.359 3.043 13.917L2.597 13.191C2.025 12.259 2.122 11.078 2.841 10.255L3.398 9.617C3.736 9.23 3.935 8.737 3.962 8.223L4.005 7.378C4.061 6.285 4.859 5.411 5.946 5.26L6.791 5.142C7.304 5.071 7.775 4.814 8.114 4.419L8.672 3.768L10.5 3.969Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M15 12C15 13.657 13.657 15 12 15C10.343 15 9 13.657 9 12C9 10.343 10.343 9 12 9C13.657 9 15 10.343 15 12Z" stroke="currentColor" stroke-width="1.75"/>
-            </svg>
-            <span>Settings</span>
-        </a>
-    </aside>
+                <nav class="app-nav" aria-label="Primary">
+                    <a href="/" class="app-nav-link {% if active_page == 'home' %}active{% endif %}">Home</a>
+                    <a href="/quick" class="app-nav-link {% if active_page == 'quick' %}active{% endif %}">Quick</a>
+                    <a href="/workspace" class="app-nav-link {% if active_page == 'workspace' %}active{% endif %}">Workspace</a>
+                    <a href="/info" class="app-nav-link {% if active_page == 'info' %}active{% endif %}">Info</a>
+                    <a href="/settings" class="app-nav-link {% if active_page == 'settings' %}active{% endif %}">Settings</a>
+                </nav>
 
-    <div class="page-content">
-        {% block content %}{% endblock %}
+                <div class="app-utilities">
+                    <button id="theme-toggle" class="utility-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">◐</button>
+                    <button class="utility-btn" onclick="maximizeAppWindow()" title="Maximize window" aria-label="Maximize window">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6 6.75H18V17.25H6V6.75Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <button class="utility-btn" onclick="toggleAppFullscreen()" title="Toggle fullscreen" aria-label="Toggle fullscreen">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M8.25 3.75H4.5V7.5M15.75 3.75H19.5V7.5M8.25 20.25H4.5V16.5M19.5 16.5V20.25H15.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="page-content">
+            <div class="page-shell">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
     </div>
 
     {% block scripts %}{% endblock %}

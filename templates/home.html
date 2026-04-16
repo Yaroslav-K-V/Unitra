@@ -1,150 +1,113 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Unitra — Local-First Python Test Tool</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/home.css">
-    <link rel="icon" href="/favicon.ico">
-    <script src="/static/scripts/theme.js"></script>
-    <script src="/static/scripts/brand-bubble.js"></script>
-</head>
-<body data-show-hints="{{ 'true' if show_hints else 'false' }}">
-    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">◐</button>
-    <div class="container home-container">
-        <header class="home-header home-hero">
-            <div class="home-hero-copy">
-                <div class="ui-eyebrow">Workspace-first Python testing</div>
-                <div class="logo">
-                    <span class="brand-mark brand-mark-lg" aria-hidden="true">
-                        <span class="brand-mark-glow"></span>
-                        <img src="/static/favicon/favicon.svg" width="36" height="36" alt="Unitra">
-                    </span>
-                    <span class="logo-text">Unitra</span>
-                    <span class="brand-bubble" data-bubble-context="hero" role="presentation"></span>
-                </div>
-                <p class="home-greeting"><span id="greeting"></span> — a local-first Python test tool for fast drafts in Quick and calmer repository workflows in Workspace.</p>
-                <div class="home-hero-actions">
-                    <a href="/workspace" class="home-cta home-cta-primary">
+{% extends "base.html" %}
+{% block title %}Unitra — Local-First Python Test Tool{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="/static/home.css">
+{% endblock %}
+
+{% block content %}
+<main class="home-screen">
+    <section class="home-hero-surface">
+        <div class="ui-eyebrow">Workspace-first Python testing</div>
+        <div class="home-hero-topline">
+            <div class="logo">
+                <span class="brand-mark brand-mark-lg" aria-hidden="true">
+                    <span class="brand-mark-glow"></span>
+                    <img src="/static/favicon/favicon.svg" width="36" height="36" alt="Unitra">
+                </span>
+                <span class="logo-text">Unitra</span>
+                <span class="brand-bubble" data-bubble-context="hero" role="presentation"></span>
+            </div>
+        </div>
+        <h1 class="home-hero-title">A calmer desktop tool for quick Python test drafts and serious repository workflows.</h1>
+        <p class="home-hero-copy"><span id="greeting"></span> — open a repo when you want managed review-and-run workflows, or stay in Quick when you only need a one-off draft.</p>
+
+        <div class="home-hero-actions">
+            <a href="/workspace" class="home-cta home-cta-primary">
+                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Open Workspace
+            </a>
+            <a href="/quick" class="home-cta home-cta-secondary">
+                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Quick Start
+            </a>
+            <a href="/info" class="home-cta home-cta-secondary">
+                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 8.25H12.008V8.258H12V8.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M11.25 11.25H12V15.75H12.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
+                </svg>
+                Info
+            </a>
+        </div>
+
+        <div class="home-launch-note hint-toggle">
+            <span><strong>Quick</strong> is for one-off code and single-file experiments.</span>
+            <span><strong>Workspace</strong> is for managed repo review, test writes, reruns, and failure repair.</span>
+        </div>
+    </section>
+
+    <section class="home-secondary-grid">
+        <article id="recent-section" class="workspace-card home-secondary-panel">
+            <div class="workspace-card-header">
+                <div class="ui-heading-with-icon">
+                    <div class="ui-icon-chip">
                         <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                        Open Workspace
-                    </a>
-                    <a href="/quick" class="home-cta home-cta-secondary">
-                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        Quick Start
-                    </a>
-                    <a href="/info" class="home-cta home-cta-secondary">
-                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M12 8.25H12.008V8.258H12V8.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M11.25 11.25H12V15.75H12.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
-                        </svg>
-                        Info
-                    </a>
-                </div>
-                <div class="home-inline-note hint-toggle">
-                    <strong>Quick</strong> is for one-off code and small files. <strong>Workspace</strong> is for managed repo review-and-run workflows.
+                    </div>
+                    <div>
+                        <h3>Recent workspaces</h3>
+                        <p class="home-panel-copy">Jump back into repository work without reopening paths manually.</p>
+                    </div>
                 </div>
             </div>
-            <div class="home-status-card">
-                <div class="ui-section-header">
-                    <div class="ui-heading-with-icon">
-                        <div class="ui-icon-chip">
-                            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M9.75 3.75V5.25M14.25 3.75V5.25M9 14.25H15M8.25 9.75H15.75M7.5 20.25H16.5C18.157 20.25 19.5 18.907 19.5 17.25V8.25C19.5 6.593 18.157 5.25 16.5 5.25H7.5C5.843 5.25 4.5 6.593 4.5 8.25V17.25C4.5 18.907 5.843 20.25 7.5 20.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3>Agent fallback</h3>
-                            <p>Current workspace profile, policy, and budget snapshot.</p>
-                        </div>
+            <ul id="recent-list" class="recent-list"></ul>
+            <p id="recent-empty" class="recent-empty">No recent workspaces yet.</p>
+        </article>
+
+        <article class="workspace-card home-secondary-panel">
+            <div class="workspace-card-header">
+                <div class="ui-heading-with-icon">
+                    <div class="ui-icon-chip">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M9.75 3.75V5.25M14.25 3.75V5.25M9 14.25H15M8.25 9.75H15.75M7.5 20.25H16.5C18.157 20.25 19.5 18.907 19.5 17.25V8.25C19.5 6.593 18.157 5.25 16.5 5.25H7.5C5.843 5.25 4.5 6.593 4.5 8.25V17.25C4.5 18.907 5.843 20.25 7.5 20.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3>Current workspace AI profile</h3>
+                        <p class="home-panel-copy">A quiet snapshot of fallback model and repair policy for your current repo.</p>
                     </div>
                 </div>
-                <div id="home-agent-status">Loading current workspace AI policy…</div>
             </div>
-        </header>
+            <div id="home-agent-status" class="home-ai-status">Loading current workspace AI profile…</div>
+        </article>
+    </section>
 
-        <div class="home-body">
-            <section class="home-main-grid">
-                <div class="mode-list">
-                    <a href="/quick" class="mode-card">
-                        <div class="mode-icon">
-                            <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-                        <div class="mode-body">
-                            <div class="ui-heading-with-icon">
-                                <h2>Quick</h2>
-                            </div>
-                            <p>Paste code, open a file, or scan a small folder for a fast local test draft.</p>
-                        </div>
-                        <div class="mode-tags">
-                            <span class="tag">Scratchpad</span>
-                            <span class="tag">Local first</span>
-                        </div>
-                    </a>
-
-                    <a href="/workspace" class="mode-card">
-                        <div class="mode-icon">
-                            <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-                        <div class="mode-body">
-                            <div class="ui-heading-with-icon">
-                                <h2>Workspace</h2>
-                            </div>
-                            <p>Open a repository, preview managed changes, and move through a calmer review-and-run flow.</p>
-                        </div>
-                        <div class="mode-tags">
-                            <span class="tag">Managed repo flow</span>
-                        </div>
-                    </a>
+    <section class="workspace-card home-runs-panel">
+        <div class="workspace-card-header">
+            <div class="ui-heading-with-icon">
+                <div class="ui-icon-chip">
+                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M8.25 8.25L12 12L15.75 8.25M6 18.75H18C19.243 18.75 20.25 17.743 20.25 16.5V7.5C20.25 6.257 19.243 5.25 18 5.25H6C4.757 5.25 3.75 6.257 3.75 7.5V16.5C3.75 17.743 4.757 18.75 6 18.75Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                 </div>
-
-                <div class="home-side-stack">
-                    <div id="recent-section" class="recent-section">
-                        <div class="ui-section-header">
-                            <div class="ui-heading-with-icon">
-                                <div class="ui-icon-chip">
-                                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </div>
-                                <h3 class="recent-title">Recent workspaces</h3>
-                            </div>
-                        </div>
-                        <ul id="recent-list" class="recent-list"></ul>
-                        <p id="recent-empty" class="recent-empty">No recent workspaces yet</p>
-                    </div>
-
-                    <div class="recent-section">
-                        <div class="ui-section-header">
-                            <div class="ui-heading-with-icon">
-                                <div class="ui-icon-chip">
-                                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M8.25 8.25L12 12L15.75 8.25M6 18.75H18C19.243 18.75 20.25 17.743 20.25 16.5V7.5C20.25 6.257 19.243 5.25 18 5.25H6C4.757 5.25 3.75 6.257 3.75 7.5V16.5C3.75 17.743 4.757 18.75 6 18.75Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </div>
-                                <h3 class="recent-title">Recent runs</h3>
-                            </div>
-                        </div>
-                        <div id="home-runs" class="recent-empty">Open a workspace to populate run history.</div>
-                    </div>
+                <div>
+                    <h3>Recent runs</h3>
+                    <p class="home-panel-copy">A quick view of the latest recorded workspace test activity.</p>
                 </div>
-            </section>
+            </div>
         </div>
-    </div>
+        <div id="home-runs" class="recent-empty">Open a workspace to populate run history.</div>
+    </section>
+</main>
+{% endblock %}
 
-    <script src="/static/scripts/greeting.js"></script>
-    <script src="/static/scripts/home.js"></script>
-</body>
-</html>
+{% block scripts %}
+<script src="/static/scripts/greeting.js"></script>
+<script src="/static/scripts/home.js"></script>
+{% endblock %}

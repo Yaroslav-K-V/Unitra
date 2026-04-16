@@ -2,11 +2,11 @@
 {% block title %}Unitra — Info{% endblock %}
 
 {% block content %}
-<main>
+<main class="info-screen">
     <header class="page-header">
-        <div class="ui-eyebrow">Context and trust</div>
-        <h1 class="page-title">Info</h1>
-        <p class="subtitle">A short practical overview of what Unitra is, how to use it, and what stays local on your machine.</p>
+        <div class="ui-eyebrow">Product overview</div>
+        <h1 class="page-title">Overview</h1>
+        <p class="subtitle">Unitra is a local-first Python testing workspace with three ways to work: Quick for one-off drafts, Workspace for managed repository flows, and `unitra` for automation-friendly terminal use.</p>
     </header>
 
     <section class="info-grid">
@@ -14,38 +14,64 @@
             <div class="workspace-card-header">
                 <h3>What Unitra is</h3>
             </div>
-            <p class="info-copy">Unitra is a local-first Python test tool for solo developers. It helps you draft tests quickly in Quick and work through calmer repository flows in Workspace.</p>
+            <p class="info-copy">Unitra helps you move from raw Python code to runnable tests without jumping between disconnected tools. It keeps the common path simple, but still gives you a repo-aware workflow when the work stops being a one-file experiment.</p>
         </article>
 
         <article class="workspace-card info-card">
             <div class="workspace-card-header">
-                <h3>Quick vs Workspace</h3>
+                <h3>Product surface</h3>
             </div>
             <div class="info-list">
-                <div><strong>Quick</strong> is for snippets, single files, and fast one-off local work.</div>
-                <div><strong>Workspace</strong> is for repositories, managed test files, review, reruns, and longer-lived workflows.</div>
-            </div>
-        </article>
-
-        <article class="workspace-card info-card">
-            <div class="workspace-card-header">
-                <h3>Local-first notes</h3>
-            </div>
-            <div class="info-list">
-                <div>Workspace metadata is stored locally in <code>.unitra</code>.</div>
-                <div>Your API key stays in <code>.env</code>.</div>
-                <div>Most flows are local-first; fallback model settings only matter when AI assistance is enabled and used.</div>
+                <div><strong>Quick</strong> is the shortest path from pasted code to a local draft test module.</div>
+                <div><strong>Workspace</strong> is the repository view for managed files, previews, reruns, and failure repair.</div>
+                <div><strong>CLI</strong> exposes the same ideas in a scriptable form for CI and power-user flows.</div>
+                <div><strong>Console</strong> gives a Textual terminal surface over the shared core workflows.</div>
             </div>
         </article>
 
         <article class="workspace-card info-card">
             <div class="workspace-card-header">
-                <h3>Project identity</h3>
+                <h3>How to use it</h3>
             </div>
             <div class="info-list">
-                <div><strong>Name</strong>: Unitra</div>
-                <div><strong>Focus</strong>: Python test generation and repository-oriented test workflows</div>
-                <div><strong>Author</strong>: Yaroslav K</div>
+                <div>Start in <strong>Quick</strong> when you want instant drafts for snippets, scratch files, or small local checks.</div>
+                <div>Move to <strong>Workspace</strong> when you need repo context, managed test paths, review before write, or repeated runs.</div>
+                <div>Use <strong>`unitra`</strong> when you want JSON output, automation, or repeatable terminal-first workflows.</div>
+                <div>Open <strong>Console</strong> when you want the shared workflow in an interactive terminal UI instead of the desktop shell.</div>
+            </div>
+        </article>
+
+        <article class="workspace-card info-card">
+            <div class="workspace-card-header">
+                <h3>Local-first guarantees</h3>
+            </div>
+            <div class="info-list">
+                <div>Workspace metadata lives locally in <code>.unitra</code> inside the repository.</div>
+                <div>Settings and API configuration stay on your machine in <code>.env</code>.</div>
+                <div>Generated tests, previews, run history, and agent profile choices are designed around local repo state first.</div>
+                <div>AI fallback matters only when it is explicitly configured and the current flow actually needs it.</div>
+            </div>
+        </article>
+
+        <article class="workspace-card info-card">
+            <div class="workspace-card-header">
+                <h3>Best fit</h3>
+            </div>
+            <div class="info-list">
+                <div>Solo Python work where you want faster test scaffolding without hiding the file-level result.</div>
+                <div>Repository flows where previewing managed writes is more important than “generate and hope”.</div>
+                <div>Terminal and CI use cases where structured output matters as much as desktop convenience.</div>
+            </div>
+        </article>
+
+        <article class="workspace-card info-card">
+            <div class="workspace-card-header">
+                <h3>Mental model</h3>
+            </div>
+            <div class="info-list">
+                <div><strong>Quick</strong>: “I have code and I need a draft now.”</div>
+                <div><strong>Workspace</strong>: “I have a repo and I want a calmer review-and-run loop.”</div>
+                <div><strong>CLI / Console</strong>: “I want the same workflow, but in automation or terminal form.”</div>
             </div>
         </article>
     </section>
