@@ -1,60 +1,84 @@
 # Unitra
 
-A local-first Python test tool with a desktop UI, a workspace-aware CLI, and a terminal console.
+Unitra is a local-first tool for generating and running Python tests.
 
-Use Quick for one-off drafts, Workspace for managed repo flows, and `unitra` for CI, automation, and power-user workflows.
+It has a desktop UI for day-to-day work, a CLI for automation, and a terminal console for keyboard-first workflows.
 
----
+## What It Does
 
-## Features
+- Generates pytest drafts from Python functions and classes.
+- Works with pasted code, single files, folders, or full repositories.
+- Shows planned workspace changes before writing files.
+- Runs tests locally with pytest.
+- Keeps workspace config, jobs, and run history in `.unitra`.
+- Can use AI as an optional fallback for harder generation or failure-repair cases.
 
-- **Quick mode** — paste any Python function or class and get tests instantly
-- **Workspace mode** — open a repo, preview managed test changes, run jobs, and inspect runs
-- **CLI** — workspace, jobs, runs, agents, and CI-safe JSON output via `unitra`
-- **Terminal console** — interactive Textual TUI via `unitra console`
-- **AI fallback** — optional model-assisted generation and failure repair context
-- **Run Tests** — execute generated or workspace tests with `pytest`
-- **Dark mode** — persistent theme toggle (light / dark)
-- **Copy output** — one click to copy generated tests or run results
-- **Recent projects** — quick access to recently scanned folders
-- Keyboard shortcuts: `Ctrl+Enter` to generate, `Ctrl+S` to save
+## Main Modes
 
----
+### Quick
 
-## Requirements
+For snippets and one-off files. Paste or open Python code, generate tests, then copy, save, or run them.
 
-- Python 3.10+
-- Windows, macOS, or Ubuntu/Debian
+### Workspace
 
----
+For real repositories. Open a folder, preview managed test changes, write tests, run jobs, and inspect recent runs.
 
-## Installation
+### CLI
+
+For scripts, CI, and repeatable terminal workflows.
+
+### Console
+
+An interactive terminal UI over the same workspace logic.
+
+## Local-First Behavior
+
+- Basic generation works without an API key.
+- Workspace files stay in the repo under `.unitra`.
+- Settings and API keys stay in `.env`.
+- AI is not required for the normal local generation path.
+
+## AI / LangChain
+
+Unitra uses local AST parsing for the default generator.
+
+LangChain is used only for optional AI-assisted paths. Workspace agent profiles define the model, token budget, enabled roles, and failure behavior. For repair flows, Unitra can build a focused context from pytest output, source snippets, generated tests, and recommendations.
+
+## Install
 
 ```bash
 git clone https://github.com/yourname/unitra.git
 cd unitra
 python -m venv .venv
+```
 
-# Windows
+Windows:
+
+```bash
 .venv\Scripts\activate
+```
 
-# macOS / Linux
+macOS / Linux:
+
+```bash
 source .venv/bin/activate
+```
 
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-**Linux only** — GTK dependencies are installed automatically on first run via `apt-get`. You can also install them manually:
+Linux desktop dependencies, if needed:
 
 ```bash
 sudo apt-get install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
 ```
 
----
+## Configure AI Fallback
 
-## Configuration (AI mode)
-
-Copy `.env.example` to `.env` and fill in your API key:
+AI is optional. For local-only generation, skip this step.
 
 ```bash
 cp .env.example .env
@@ -62,73 +86,54 @@ cp .env.example .env
 
 ```env
 API_KEY=your_openai_key_here
-MODEL=gpt-5.4-mini
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
----
+## Run
 
-## Running the desktop app
+Desktop app:
 
 ```bash
 python app.py
 ```
 
-## CLI
-
-Installed command:
+CLI:
 
 ```bash
 pip install -e .
 unitra --help
 ```
 
-Useful examples:
+Examples:
 
 ```bash
 unitra workspace init --root /path/to/repo
 unitra workspace status --root /path/to/repo --json
-unitra console --root /path/to/repo
 unitra test generate --root /path/to/repo --repo --dry-run --json
 unitra test run --root /path/to/repo -q
 unitra runs list --root /path/to/repo
-unitra agent show default --root /path/to/repo --json
+unitra console --root /path/to/repo
 ```
 
----
+## Project Layout
 
-## Project Structure
-
-```
-app.py                  # Entry point: Flask + pywebview startup
-routes/
-  pages.py              # Page routes (home, quick, workspace, info)
-  generate.py           # Test generation routes
-  runner.py             # Run tests + recent projects
-  workspace.py          # Workspace routes
-src/
-  cli.py                # Reference CLI surface
-  tui/                  # Textual terminal app over shared core
-  parser.py             # AST-based Python source parser
-  generator.py          # Test code generator
-  api.py                # pywebview JS bridge
-  application/          # Core services and models
-  infrastructure/       # Repositories, planners, writers, execution
-agent/
-  main.py               # LangChain agent for AI mode
-static/                 # CSS, JS, fonts
-templates/              # Jinja2 HTML templates
-tests/                  # Unit tests for the app itself
+```text
+app.py          # desktop app entrypoint
+routes/         # Flask pages and API routes
+src/            # core app, CLI, TUI, services, infrastructure
+agent/          # AI runner entrypoint
+static/         # CSS, JavaScript, assets
+templates/      # Jinja templates
+tests/          # test suite
 ```
 
----
-
-## Running Tests
+## Tests
 
 ```bash
 pytest tests/
 ```
 
----
+CI runs tests in shards for faster pull request feedback.
 
 ## License
 

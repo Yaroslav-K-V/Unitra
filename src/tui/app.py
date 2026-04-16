@@ -1,4 +1,6 @@
 import json
+import os
+from datetime import datetime
 from typing import Optional
 
 from src.application.exceptions import DependencyError
@@ -192,6 +194,9 @@ if TEXTUAL_AVAILABLE:
             self._set_screen(self.session.current_screen)
             if self.initial_root:
                 self.query_one("#workspace-root-input", Input).value = self.initial_root
+                config_path = os.path.join(os.path.abspath(self.initial_root), ".unitra", "unitra.toml")
+                if os.path.exists(config_path):
+                    self._open_workspace()
             self._refresh_hints()
 
         def action_focus_workspace(self) -> None:
@@ -414,9 +419,160 @@ if TEXTUAL_AVAILABLE:
         def _render_result(self, result: ScreenActionResult) -> str:
             if result.error:
                 return result.error
+            if result.action == "workspace.status":
+                return self._render_workspace_status(result)
+            if result.action == "workspace.init":
+                config = result.payload.get("config", {})
+                return "\n".join([
+                    result.message or "Workspace initialized.",
+                    f"Root: {config.get('root_path', self.session.active_workspace_root)}",
+                    f"Active profile: {config.get('selected_agent_profile', self.session.selected_agent_profile or 'default')}",
+                ])
+            if result.action == "workspace.validate":
+                return "Workspace metadata looks healthy."
+            if result.action == "runs.list":
+                return self._render_runs_list(result.payload.get("runs", []))
+            if result.action == "runs.show":
+                return self._render_job_result(result.payload)
+            if result.action == "agent.list":
+                return self._render_agent_list(result.payload.get("profiles", []))
+            if result.action == "agent.show":
+                return self._render_agent_profile(result.payload)
+            if result.action == "job.list":
+                return self._render_job_list(result.payload.get("jobs", []))
+            if result.action == "job.show":
+                return self._render_job_definition(result.payload)
+            if result.action in {"test.generate", "test.update", "test.fix-failures", "test.run", "job.run"}:
+                return self._render_job_result(result.payload)
+            if result.action == "quick.generate":
+                return result.payload.get("test_code", "") or result.message
+            if result.action == "quick.run":
+                run = result.payload.get("run", {})
+                return "\n".join(
+                    item for item in [
+                        "Quick tests passed." if run.get("returncode") == 0 else "Quick tests failed.",
+                        f"Coverage: {run.get('coverage')}" if run.get("coverage") else "",
+                        run.get("output", ""),
+                    ] if item
+                )
             if result.payload:
                 return self._render_payload(result.payload)
             return result.message or result.action
+
+        def _render_workspace_status(self, result: ScreenActionResult) -> str:
+            status = result.payload
+            config = status.get("config", {})
+            return "\n".join([
+                result.message or "Workspace loaded.",
+                f"Root: {config.get('root_path', self.session.active_workspace_root)}",
+                f"Tests: {config.get('test_root', 'tests/unit')}",
+                f"Profile: {config.get('selected_agent_profile', self.session.selected_agent_profile or 'default')}",
+                f"Jobs: {', '.join(status.get('jobs', [])) or 'none'}",
+                f"Recent runs: {len(status.get('recent_runs', []))}",
+            ])
+
+        def _render_runs_list(self, runs) -> str:
+            if not runs:
+                return "No recorded runs yet."
+            lines = ["Recent runs"]
+            for item in runs:
+                run_id = item.get("history_id") if isinstance(item, dict) else str(item)
+                label = self._format_run_id(run_id)
+                if isinstance(item, dict):
+                    status = self._status_label(item.get("run", {}).get("returncode"))
+                    name = item.get("job_name") or item.get("mode") or "run"
+                    lines.append(f"- {label}  {name}  {status}")
+                else:
+                    lines.append(f"- {label}")
+            return "\n".join(lines)
+
+        def _render_agent_list(self, profiles) -> str:
+            if not profiles:
+                return "No agent profiles found."
+            lines = ["Agent profiles"]
+            for profile in profiles:
+                roles = ", ".join(profile.get("roles_enabled", [])) or "no roles"
+                lines.append(f"- {profile.get('name', 'unnamed')}  model={profile.get('model', 'unknown')}  roles={roles}")
+            return "\n".join(lines)
+
+        def _render_agent_profile(self, profile) -> str:
+            roles = ", ".join(profile.get("roles_enabled", [])) or "none"
+            return "\n".join([
+                f"Agent profile: {profile.get('name', 'unnamed')}",
+                f"Model: {profile.get('model', 'unknown')}",
+                f"Roles: {roles}",
+                f"Input budget: {profile.get('input_token_budget', 'unknown')}",
+                f"Output budget: {profile.get('output_token_budget', 'unknown')}",
+                f"Failure mode: {profile.get('failure_mode', 'unknown')}",
+            ])
+
+        def _render_job_list(self, jobs) -> str:
+            if not jobs:
+                return "No saved jobs found."
+            lines = ["Saved jobs"]
+            for job in jobs:
+                lines.append(
+                    f"- {job.get('name', 'unnamed')}  mode={job.get('mode', 'unknown')}  "
+                    f"target={job.get('target_scope', 'repo')}  output={job.get('output_policy', 'preview')}"
+                )
+            return "\n".join(lines)
+
+        def _render_job_definition(self, job) -> str:
+            return "\n".join([
+                f"Job: {job.get('name', 'unnamed')}",
+                f"Mode: {job.get('mode', 'unknown')}",
+                f"Target: {job.get('target_scope', 'repo')}",
+                f"Output: {job.get('output_policy', 'preview')}",
+                f"Timeout: {job.get('timeout', 30)}s",
+            ])
+
+        def _render_job_result(self, payload) -> str:
+            run = payload.get("run", {})
+            planned = payload.get("planned_files", [])
+            written = payload.get("written_files", [])
+            fallbacks = payload.get("fallback_context_summary", {}).get("count", 0)
+            lines = [
+                f"Job: {payload.get('job_name', payload.get('mode', 'workspace job'))}",
+                f"Mode: {payload.get('mode', 'unknown')}",
+                f"Target: {payload.get('target_scope', 'repo')}",
+                f"Planned files: {len(planned)}",
+                f"Written files: {len(written)}",
+                f"Run: {self._status_label(run.get('returncode'))}",
+            ]
+            if payload.get("history_id"):
+                lines.append(f"History id: {payload['history_id']}")
+            if run.get("coverage"):
+                lines.append(f"Coverage: {run['coverage']}")
+            if fallbacks:
+                lines.append(f"Fallback contexts: {fallbacks}")
+            if planned:
+                lines.append("")
+                lines.append("Planned:")
+                for item in planned[:8]:
+                    lines.append(f"- {item.get('action', 'plan')}: {item.get('test_path', '')}")
+                if len(planned) > 8:
+                    lines.append(f"- ... {len(planned) - 8} more")
+            if run.get("output"):
+                lines.append("")
+                lines.append("Pytest output:")
+                lines.append(run["output"])
+            return "\n".join(lines)
+
+        @staticmethod
+        def _status_label(returncode) -> str:
+            if returncode is None:
+                return "not run"
+            return "passed" if returncode == 0 else f"failed ({returncode})"
+
+        @staticmethod
+        def _format_run_id(run_id: str) -> str:
+            value = str(run_id or "")
+            if len(value) >= 14 and value[:14].isdigit():
+                try:
+                    return datetime.strptime(value[:14], "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    return value
+            return value or "unknown run"
 
         def _notify_text(self, text: str) -> None:
             self.query_one("#workspace-output", Static).update(text)

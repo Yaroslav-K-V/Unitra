@@ -91,9 +91,10 @@ class WorkspaceService:
 
 
 class AgentOrchestrator:
-    def __init__(self, source_loader, planner):
+    def __init__(self, source_loader, planner, ai_runner=None):
         self._source_loader = source_loader
         self._planner = planner
+        self._ai_runner = ai_runner
 
     def orchestrate(self, workspace: WorkspaceConfig, profile: AgentProfile, source_paths: List[str]) -> List[GenerationArtifact]:
         planned_files = self._planner.plan_paths(workspace, source_paths)
@@ -101,8 +102,8 @@ class AgentOrchestrator:
         for planned in planned_files:
             analysis = self._analyze(planned.source_path)
             test_plan = self._plan(planned.source_path, planned.test_path, analysis)
-            generated = self._generate(planned.source_path, planned.test_path)
-            notes = self._review(generated.generated_code, test_plan, profile)
+            generated = self._generate(planned.source_path, planned.test_path, profile)
+            notes = generated.reviewer_notes + self._review(generated.generated_code, test_plan, profile)
             artifacts.append(
                 GenerationArtifact(
                     source_path=planned.source_path,
@@ -174,17 +175,21 @@ class AgentOrchestrator:
             coverage_goals=goals,
         )
 
-    def _generate(self, source_path: str, test_path: str) -> GenerationArtifact:
+    def _generate(self, source_path: str, test_path: str, profile: AgentProfile) -> GenerationArtifact:
         bundle = self._source_loader.load_file(source_path)
         functions = parse_functions(bundle.source_code)
         classes = parse_classes(bundle.source_code)
         test_code = generate_test_module(functions, classes)
+        reviewer_notes = []
+        ai_test_code = self._generate_with_ai(bundle.source_code, profile)
+        if ai_test_code:
+            test_code = ai_test_code
+            reviewer_notes.append("Generated with AI assistance.")
         conftest = generate_conftest(classes) if classes else ""
-        managed = [
-            MANAGED_HEADER,
-            "",
-            test_code.strip(),
-        ]
+        managed = [MANAGED_HEADER]
+        if reviewer_notes:
+            managed.extend(f"# {note}" for note in reviewer_notes)
+        managed.extend(["", test_code.strip()])
         if conftest:
             managed.extend(["", "# Suggested conftest.py content", conftest.strip()])
         managed.extend(["", USER_BLOCK_BEGIN, USER_BLOCK_END, ""])
@@ -192,8 +197,27 @@ class AgentOrchestrator:
             source_path=source_path,
             test_path=test_path,
             generated_code="\n".join(managed),
-            reviewer_notes=[],
+            reviewer_notes=reviewer_notes,
         )
+
+    def _generate_with_ai(self, source_code: str, profile: AgentProfile) -> str:
+        if self._ai_runner is None:
+            return ""
+        if "generator" not in profile.roles_enabled:
+            return ""
+        try:
+            output = self._ai_runner.run(source_code).strip()
+        except EnvironmentError:
+            return ""
+        except Exception:
+            return ""
+        if not output or output.startswith("# No functions or classes found."):
+            return ""
+        try:
+            ast.parse(output)
+        except SyntaxError:
+            return ""
+        return output
 
     @staticmethod
     def _review(generated_code: str, test_plan: TestPlanArtifact, profile: AgentProfile) -> List[str]:

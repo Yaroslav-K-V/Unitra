@@ -61,6 +61,7 @@ def build_container(config: Optional[AppConfig] = None) -> ServiceContainer:
     run_history_repository = RunHistoryRepository(workspace_repository.runs_dir)
     planner = TestFilePlanner()
     writer = TestWriter()
+    ai_runner = AgentAiRunner(env_path=cfg.env_path)
     test_runner = TestRunService(
         source_loader=source_loader,
         test_executor=SubprocessTestExecutor(timeout=cfg.pytest_timeout, fallback_dir=cfg.root_path),
@@ -79,13 +80,13 @@ def build_container(config: Optional[AppConfig] = None) -> ServiceContainer:
         source_loader=source_loader,
         planner=planner,
         writer=writer,
-        orchestrator=AgentOrchestrator(source_loader=source_loader, planner=planner),
+        orchestrator=AgentOrchestrator(source_loader=source_loader, planner=planner, ai_runner=ai_runner),
         test_runner=test_runner,
     )
     return ServiceContainer(
         config=cfg,
         generation=GenerationService(source_loader=source_loader),
-        ai_generation=AiGenerationService(source_loader=source_loader, ai_runner=AgentAiRunner()),
+        ai_generation=AiGenerationService(source_loader=source_loader, ai_runner=ai_runner),
         test_runner=test_runner,
         recent=RecentService(
             repository=JsonRecentRepository(recent_path=cfg.recent_path, max_recent=cfg.max_recent)

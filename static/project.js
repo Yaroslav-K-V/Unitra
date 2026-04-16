@@ -324,6 +324,25 @@ function currentWorkspaceScope() {
     return selected.value;
 }
 
+function compactWorkspacePath(path) {
+    const value = String(path || "");
+    const root = String(window._workspaceRoot || "");
+    if (root && value === root) {
+        return value.split(/[\\/]/).filter(Boolean).pop() || value;
+    }
+    const prefix = root.endsWith("/") ? root : `${root}/`;
+    if (root && value.startsWith(prefix)) {
+        return value.slice(prefix.length);
+    }
+    return value;
+}
+
+function renderPathText(path, className = "workspace-path-text") {
+    const full = String(path || "");
+    const label = compactWorkspacePath(full);
+    return `<span class="${className}" title="${WorkspaceUi.escapeHtml(full)}">${WorkspaceUi.escapeHtml(label)}</span>`;
+}
+
 function renderWorkspaceStatus(status) {
     const statusCard = document.getElementById("workspace-status");
     const rootPill = document.getElementById("workspace-root-pill");
@@ -332,17 +351,20 @@ function renderWorkspaceStatus(status) {
     const jobs = (status.jobs || []).join(", ") || "none";
     const profiles = (status.agent_profiles || []).join(", ") || "none";
     const runs = (status.recent_runs || []).length;
-    if (rootPill) rootPill.textContent = status.config.root_path;
+    if (rootPill) {
+        rootPill.textContent = compactWorkspacePath(status.config.root_path);
+        rootPill.title = status.config.root_path;
+    }
     statusCard.className = "workspace-status-card";
     statusCard.innerHTML = `
         <div class="workspace-stat-grid">
             <div class="workspace-stat-card">
                 <span class="workspace-stat-label">Root</span>
-                <strong>${WorkspaceUi.escapeHtml(status.config.root_path)}</strong>
+                <strong>${renderPathText(status.config.root_path)}</strong>
             </div>
             <div class="workspace-stat-card">
                 <span class="workspace-stat-label">Test root</span>
-                <strong>${WorkspaceUi.escapeHtml(status.config.test_root)}</strong>
+                <strong>${renderPathText(status.config.test_root)}</strong>
             </div>
             <div class="workspace-stat-card">
                 <span class="workspace-stat-label">Active profile</span>
@@ -528,6 +550,8 @@ function renderWorkspaceOutput(result) {
 
     output.classList.remove("error");
 
+    const runId = data.history_id || "";
+    const runLabel = runId ? WorkspaceUi.formatRunTimestamp(runId) : "Not saved";
     const summaryCards = `
         <div class="workspace-review-summary-grid">
             <div class="workspace-stat-card">
@@ -544,7 +568,8 @@ function renderWorkspaceOutput(result) {
             </div>
             <div class="workspace-stat-card">
                 <span class="workspace-stat-label">Run id</span>
-                <strong>${WorkspaceUi.escapeHtml(data.history_id || "Not saved")}</strong>
+                <strong>${WorkspaceUi.escapeHtml(runLabel)}</strong>
+                ${runId ? `<div class="workspace-list-meta workspace-mono-text">${WorkspaceUi.escapeHtml(runId)}</div>` : ""}
             </div>
         </div>
     `;
@@ -587,8 +612,8 @@ function renderWorkspaceOutput(result) {
                     <article class="workspace-review-file-card">
                         <div class="workspace-review-file-meta">
                             <div>
-                                <strong>${WorkspaceUi.escapeHtml(item.test_path)}</strong>
-                                <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.source_path)}</div>
+                                <strong>${renderPathText(item.test_path)}</strong>
+                                <div class="workspace-list-meta">${renderPathText(item.source_path)}</div>
                             </div>
                             <span class="workspace-chip">${WorkspaceUi.escapeHtml(item.action)}</span>
                         </div>
@@ -620,7 +645,7 @@ function renderWorkspaceOutput(result) {
                     <article class="workspace-review-file-card">
                         <div class="workspace-review-file-meta">
                             <div>
-                                <strong>${WorkspaceUi.escapeHtml(item.test_path)}</strong>
+                                <strong>${renderPathText(item.test_path)}</strong>
                                 <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.action)} · ${item.written ? "written" : "preview only"}</div>
                             </div>
                             <span class="workspace-chip workspace-chip-subtle">${item.managed ? "managed" : "manual review"}</span>

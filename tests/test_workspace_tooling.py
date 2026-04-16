@@ -29,6 +29,16 @@ class StubTestRunner:
         return RunResult(output="FAILED tests/unit/test_math.py::test_divide - ValueError: Cannot divide by zero", returncode=1, coverage="91%")
 
 
+class StubAiRunner:
+    def __init__(self, output):
+        self.output = output
+        self.calls = []
+
+    def run(self, source_code):
+        self.calls.append(source_code)
+        return self.output
+
+
 def _make_workspace(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
@@ -148,6 +158,43 @@ def test_orchestrator_generates_managed_artifact(tmp_path):
     assert len(artifacts) == 1
     assert "Managed by Unitra" in artifacts[0].generated_code
     assert USER_BLOCK_BEGIN in artifacts[0].generated_code
+
+
+def test_orchestrator_uses_ai_runner_when_available(tmp_path):
+    root, workspace_repo, _, _ = _make_workspace(tmp_path)
+    workspace = workspace_repo.load_config()
+    ai_runner = StubAiRunner("import pytest\n\n\ndef test_ai_generated():\n    assert add(1, 2) == 3\n")
+    orchestrator = AgentOrchestrator(SourceLoader(SKIP_DIRS), TestFilePlanner(), ai_runner=ai_runner)
+
+    artifacts = orchestrator.orchestrate(
+        workspace,
+        AgentProfile(name="default", model="gpt-5.4-mini"),
+        [os.path.join(str(root), "pkg", "math_utils.py")],
+    )
+
+    assert len(ai_runner.calls) == 1
+    assert "Generated with AI assistance" in artifacts[0].generated_code
+    assert "def test_ai_generated" in artifacts[0].generated_code
+    assert USER_BLOCK_BEGIN in artifacts[0].generated_code
+
+
+def test_orchestrator_falls_back_when_ai_runner_fails(tmp_path):
+    class FailingAiRunner:
+        def run(self, source_code):
+            raise EnvironmentError("API_KEY not found in .env")
+
+    root, workspace_repo, _, _ = _make_workspace(tmp_path)
+    workspace = workspace_repo.load_config()
+    orchestrator = AgentOrchestrator(SourceLoader(SKIP_DIRS), TestFilePlanner(), ai_runner=FailingAiRunner())
+
+    artifacts = orchestrator.orchestrate(
+        workspace,
+        AgentProfile(name="default", model="gpt-5.4-mini"),
+        [os.path.join(str(root), "pkg", "math_utils.py")],
+    )
+
+    assert "def test_add_basic" in artifacts[0].generated_code
+    assert "Generated with AI assistance" not in artifacts[0].generated_code
 
 
 def test_job_service_generate_preview_and_fix_failures(tmp_path):
