@@ -60,15 +60,16 @@ def ai():
 @pages_bp.route("/settings")
 def settings():
     from src.container import get_container
-    import os
 
     config = load_config(root_path=current_app.root_path)
+    settings_result = get_container().settings.load_settings()
     return render_template(
         "settings.html",
         **_page_context(
             "settings",
-            api_key_set=bool(os.getenv("API_KEY")),
-            current_model=config.ai_model,
-            current_show_hints=config.show_hints,
+            api_key_set=settings_result.api_key_set,
+            current_model=settings_result.model or config.ai_model,
+            current_show_hints=settings_result.show_hints,
+            current_ai_policy=settings_result.ai_policy.to_dict(),
         ),
     )

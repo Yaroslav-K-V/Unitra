@@ -4,14 +4,17 @@ import threading
 from flask import Blueprint, jsonify, request
 
 from src.application.exceptions import DependencyError, ValidationError
+from src.application.ai_policy import AiPolicy
 from src.application.workspace_models import TestTarget
-from src.config import load_config
+from src.config import APP_ROOT, load_config
 from src.container import build_container
 from src.serializers import (
+    serialize_ai_policy,
     serialize_agent_profile,
     serialize_job_result,
     serialize_run_history_record,
     serialize_workspace_status,
+    to_dict,
 )
 
 workspace_bp = Blueprint("workspace", __name__)
@@ -31,7 +34,8 @@ def _workspace_signature(root_path: str) -> tuple:
     jobs_dir = os.path.join(unitra_dir, "jobs")
     agents_dir = os.path.join(unitra_dir, "agents")
     runs_dir = os.path.join(unitra_dir, "runs")
-    paths = (config_path, jobs_dir, agents_dir, runs_dir)
+    settings_path = os.getenv("UNITRA_SETTINGS_PATH") or os.path.join(APP_ROOT, "data", "settings.json")
+    paths = (config_path, jobs_dir, agents_dir, runs_dir, settings_path)
     signature = []
     for path in paths:
         try:
@@ -50,12 +54,15 @@ def _invalidate_workspace_cache(root_path: str) -> None:
 
 def _container_for_root(root_path: str):
     root = _normalize_root(root_path)
+    signature = _workspace_signature(root)
     with _CACHE_LOCK:
         cached = _CONTAINER_CACHE.get(root)
         if cached is not None:
-            return cached
+            cached_signature, cached_container = cached
+            if cached_signature == signature:
+                return cached_container
         container = build_container(load_config(root_path=root))
-        _CONTAINER_CACHE[root] = container
+        _CONTAINER_CACHE[root] = (signature, container)
         return container
 
 
@@ -116,6 +123,18 @@ def _workspace_run_payload(container, history_id: str):
     return serialize_run_history_record(history_id, payload, model=model)
 
 
+def _workspace_policy_state(container):
+    global_policy = getattr(container.config, "ai_policy", AiPolicy())
+    if hasattr(container.workspace, "ai_policy_state"):
+        return container.workspace.ai_policy_state(global_policy)
+    return {
+        "effective_ai_policy": global_policy,
+        "global_ai_policy": global_policy,
+        "workspace_ai_policy": {"inherit": True, **global_policy.to_dict()},
+        "ai_policy_source": "global",
+    }
+
+
 def _target_from_body(body: dict, root_path: str) -> TestTarget:
     return TestTarget(
         scope=body.get("scope", "repo"),
@@ -133,7 +152,7 @@ def workspace_init():
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     _invalidate_workspace_cache(root)
-    return jsonify(config.__dict__)
+    return jsonify(to_dict(config))
 
 
 @workspace_bp.route("/workspace/status", methods=["GET"])
@@ -187,13 +206,51 @@ def _workspace_runs_for_root(root: str, limit: int):
 def workspace_agent_profile():
     root = request.args.get("root", ".")
     try:
+        container = _container_for_root(root)
+        policy_state = _workspace_policy_state(container)
         payload = _cached_payload(
             root,
             "agent-profile",
-            lambda: serialize_agent_profile(_container_for_root(root).workspace.active_agent_profile()),
+            lambda: serialize_agent_profile(
+                container.workspace.active_agent_profile(),
+                effective_ai_policy=policy_state["effective_ai_policy"],
+                global_ai_policy=policy_state["global_ai_policy"],
+                workspace_ai_policy=policy_state["workspace_ai_policy"],
+                ai_policy_source=policy_state["ai_policy_source"],
+            ),
         )
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
+    return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/ai-policy", methods=["GET"])
+def workspace_ai_policy():
+    root = request.args.get("root", ".")
+    try:
+        container = _container_for_root(root)
+        payload = _serialize_ai_policy_state(_workspace_policy_state(container))
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/ai-policy", methods=["POST"])
+def workspace_ai_policy_save():
+    body = request.get_json()
+    root = body.get("root", ".")
+    try:
+        container = _container_for_root(root)
+        payload = _serialize_ai_policy_state(
+            container.workspace.save_ai_policy(
+                getattr(container.config, "ai_policy", AiPolicy()),
+                inherit=bool(body.get("inherit", True)),
+                policy_values=body.get("ai_policy", {}),
+            )
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    _invalidate_workspace_cache(root)
     return jsonify(payload)
 
 
@@ -202,11 +259,29 @@ def workspace_job_run():
     body = request.get_json()
     root = body.get("root", ".")
     try:
-        result = _container_for_root(root).jobs.run_job(
-            body.get("name", ""),
-            target_value=body.get("target", ""),
-            output_policy=body.get("output_policy", ""),
-        )
+        jobs = _container_for_root(root).jobs
+        try:
+            result = jobs.run_job(
+                body.get("name", ""),
+                target_value=body.get("target", ""),
+                output_policy=body.get("output_policy", ""),
+                use_ai_generation=bool(body.get("use_ai_generation", False)),
+                use_ai_repair=bool(body.get("use_ai_repair", False)),
+            )
+        except TypeError:
+            try:
+                result = jobs.run_job(
+                    body.get("name", ""),
+                    target_value=body.get("target", ""),
+                    output_policy=body.get("output_policy", ""),
+                    use_ai_generation=bool(body.get("use_ai_generation", False)),
+                )
+            except TypeError:
+                result = jobs.run_job(
+                    body.get("name", ""),
+                    target_value=body.get("target", ""),
+                    output_policy=body.get("output_policy", ""),
+                )
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     except DependencyError as exc:
@@ -240,11 +315,32 @@ def _workspace_test_action(action: str):
     jobs = _container_for_root(root).jobs
     try:
         if action == "generate":
-            result = jobs.generate_tests(target, write=write)
+            try:
+                result = jobs.generate_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
+            except TypeError:
+                result = jobs.generate_tests(target, write=write)
         elif action == "update":
-            result = jobs.update_tests(target, write=write)
+            try:
+                result = jobs.update_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
+            except TypeError:
+                result = jobs.update_tests(target, write=write)
         else:
-            result = jobs.fix_failed_tests(target, write=write)
+            try:
+                result = jobs.fix_failed_tests(
+                    target,
+                    write=write,
+                    use_ai_generation=bool(body.get("use_ai_generation", False)),
+                    use_ai_repair=bool(body.get("use_ai_repair", False)),
+                )
+            except TypeError:
+                try:
+                    result = jobs.fix_failed_tests(
+                        target,
+                        write=write,
+                        use_ai_generation=bool(body.get("use_ai_generation", False)),
+                    )
+                except TypeError:
+                    result = jobs.fix_failed_tests(target, write=write)
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     except DependencyError as exc:
@@ -253,3 +349,12 @@ def _workspace_test_action(action: str):
         return jsonify({"error": str(exc)}), 408
     _invalidate_workspace_cache(root)
     return jsonify(_job_payload(result))
+
+
+def _serialize_ai_policy_state(state: dict) -> dict:
+    return {
+        "effective_ai_policy": serialize_ai_policy(state["effective_ai_policy"]),
+        "global_ai_policy": serialize_ai_policy(state["global_ai_policy"]),
+        "workspace_ai_policy": serialize_ai_policy(state["workspace_ai_policy"]),
+        "ai_policy_source": state["ai_policy_source"],
+    }

@@ -12,6 +12,7 @@ window._workspaceUiCache = window._workspaceUiCache || {
 };
 window._workspaceRunIndex = window._workspaceRunIndex || new Map();
 window._workspaceLastRequest = window._workspaceLastRequest || null;
+window._workspaceAgentProfile = window._workspaceAgentProfile || null;
 
 function switchWorkspaceTab(name) {
     document.querySelectorAll(".workspace-tab").forEach(panel => {
@@ -98,6 +99,44 @@ function invalidateWorkspaceUiCache(root) {
             window._workspaceUiCache.runs.delete(key);
         }
     });
+}
+
+function defaultAiPolicy() {
+    return { ai_generation: "off", ai_repair: "ask", ai_explain: "ask" };
+}
+
+function currentWorkspaceAiPolicy() {
+    return window._workspaceAgentProfile?.effective_ai_policy || defaultAiPolicy();
+}
+
+function shouldPromptForAiGeneration(action) {
+    return ["generate", "update", "fix-failures"].includes(action)
+        && currentWorkspaceAiPolicy().ai_generation === "ask";
+}
+
+function confirmAiGeneration(action, write) {
+    if (!shouldPromptForAiGeneration(action)) return false;
+    const profile = window._workspaceAgentProfile || {};
+    const model = profile.model || "configured model";
+    const scope = currentWorkspaceScope();
+    const actionLabel = write ? "write managed tests" : "preview managed changes";
+    return window.confirm(
+        `Use AI for this ${actionLabel} run?\n\nUnitra will send the selected ${scope} source context to ${model}. Choose Cancel to continue locally.`
+    );
+}
+
+function canAskForAiRepair() {
+    return currentWorkspaceAiPolicy().ai_repair === "ask";
+}
+
+function confirmAiRepair() {
+    if (!canAskForAiRepair()) return false;
+    const profile = window._workspaceAgentProfile || {};
+    const model = profile.model || "configured model";
+    const scope = currentWorkspaceScope();
+    return window.confirm(
+        `Ask AI for repair suggestions?\n\nUnitra will send focused failure context for the selected ${scope} scope to ${model}.`
+    );
 }
 
 function getWorkspaceActionButtons() {
@@ -310,7 +349,7 @@ function retryWorkspaceLastRequest() {
         return;
     }
     if (request.type === "action") {
-        runWorkspaceAction(request.action, request.write);
+        runWorkspaceAction(request.action, request.write, null, request.options || {});
         return;
     }
     if (request.type === "job") {
@@ -341,6 +380,46 @@ function renderPathText(path, className = "workspace-path-text") {
     const full = String(path || "");
     const label = compactWorkspacePath(full);
     return `<span class="${className}" title="${WorkspaceUi.escapeHtml(full)}">${WorkspaceUi.escapeHtml(label)}</span>`;
+}
+
+function normalizeAiMetadata(item) {
+    const normalized = { ...(item || {}) };
+    if (!Object.prototype.hasOwnProperty.call(normalized, "ai_attempted")) {
+        normalized.ai_attempted = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(normalized, "ai_used")) {
+        normalized.ai_used = null;
+    }
+    normalized.ai_status = normalized.ai_status || "unknown";
+    normalized.ai_reason = normalized.ai_reason || "";
+    return normalized;
+}
+
+function getAiLabel(item) {
+    if (item.ai_attempted === null || item.ai_used === null) {
+        return { label: "AI unknown", className: "workspace-chip-subtle" };
+    }
+    if (item.ai_attempted === true && item.ai_used === true) {
+        return { label: "AI used", className: "workspace-chip-ai-used" };
+    }
+    if (item.ai_attempted === true && item.ai_used === false) {
+        return { label: "AI fallback", className: "workspace-chip-ai-fallback" };
+    }
+    return { label: "AI skipped", className: "workspace-chip-subtle" };
+}
+
+function getAiSummaryLabel(items) {
+    if (!items.length) return { label: "AI unknown", className: "workspace-chip-subtle" };
+    if (items.some(item => item.ai_attempted === null || item.ai_used === null)) {
+        return { label: "AI unknown", className: "workspace-chip-subtle" };
+    }
+    if (items.some(item => item.ai_attempted === true && item.ai_used === true)) {
+        return { label: "AI used", className: "workspace-chip-ai-used" };
+    }
+    if (items.some(item => item.ai_attempted === true && item.ai_used === false)) {
+        return { label: "AI fallback", className: "workspace-chip-ai-fallback" };
+    }
+    return { label: "AI skipped", className: "workspace-chip-subtle" };
 }
 
 function renderWorkspaceStatus(status) {
@@ -441,6 +520,7 @@ function renderWorkspaceRuns(runs) {
                 <div class="workspace-item-actions">
                     <button class="btn-ghost" type="button" onclick='openWorkspaceRun(${historyId})'>Open run</button>
                     ${status.failed ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this)">Fix failures</button>' : ""}
+                    ${status.failed && canAskForAiRepair() ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this, { use_ai_repair: true })">Repair with AI</button>' : ""}
                 </div>
             </div>
         `;
@@ -452,7 +532,12 @@ function renderWorkspaceAgentProfile(profile) {
     const container = document.getElementById("workspace-agent-profile");
     const pill = document.getElementById("workspace-agent-pill");
     if (!container) return;
+    window._workspaceAgentProfile = profile;
     if (pill) pill.textContent = profile.name;
+    const effectivePolicy = profile.effective_ai_policy || defaultAiPolicy();
+    const workspacePolicy = profile.workspace_ai_policy || { inherit: true, ...defaultAiPolicy() };
+    const policySource = profile.ai_policy_source || "global";
+    const inherited = workspacePolicy.inherit !== false;
     container.className = "workspace-agent-card";
     container.innerHTML = `
         <div class="workspace-stat-grid">
@@ -472,12 +557,84 @@ function renderWorkspaceAgentProfile(profile) {
                 <span class="workspace-stat-label">Failure mode</span>
                 <strong>${WorkspaceUi.escapeHtml(profile.failure_mode)}</strong>
             </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">AI policy</span>
+                <strong>${WorkspaceUi.escapeHtml(policySource)}</strong>
+            </div>
         </div>
         <div class="workspace-status-footer">
             ${(profile.roles_enabled || []).map(role => `<span class="workspace-pill workspace-pill-muted">${WorkspaceUi.escapeHtml(role)}</span>`).join("")}
         </div>
+        <div class="workspace-ai-policy-panel">
+            <div class="workspace-list-meta">Effective: generation ${WorkspaceUi.escapeHtml(effectivePolicy.ai_generation)}, repair ${WorkspaceUi.escapeHtml(effectivePolicy.ai_repair)}, explain ${WorkspaceUi.escapeHtml(effectivePolicy.ai_explain)}</div>
+            <label class="settings-checkbox-row workspace-ai-policy-inherit">
+                <input type="checkbox" id="workspace-ai-policy-inherit" ${inherited ? "checked" : ""} onchange="toggleWorkspaceAiPolicyControls()">
+                <span>Use global AI settings</span>
+            </label>
+            <div class="workspace-ai-policy-controls" id="workspace-ai-policy-controls">
+                <label class="workspace-list-meta" for="workspace-ai-generation-select">Generation</label>
+                <select id="workspace-ai-generation-select" class="settings-select">
+                    <option value="off" ${workspacePolicy.ai_generation === "off" ? "selected" : ""}>Off</option>
+                    <option value="ask" ${workspacePolicy.ai_generation === "ask" ? "selected" : ""}>Ask first</option>
+                </select>
+                <label class="workspace-list-meta" for="workspace-ai-repair-select">Repair</label>
+                <select id="workspace-ai-repair-select" class="settings-select">
+                    <option value="off" ${workspacePolicy.ai_repair === "off" ? "selected" : ""}>Off</option>
+                    <option value="ask" ${workspacePolicy.ai_repair === "ask" ? "selected" : ""}>Ask first</option>
+                    <option value="auto" ${workspacePolicy.ai_repair === "auto" ? "selected" : ""}>Auto</option>
+                </select>
+                <label class="workspace-list-meta" for="workspace-ai-explain-select">Explain</label>
+                <select id="workspace-ai-explain-select" class="settings-select">
+                    <option value="off" ${workspacePolicy.ai_explain === "off" ? "selected" : ""}>Off</option>
+                    <option value="ask" ${workspacePolicy.ai_explain === "ask" ? "selected" : ""}>Ask first</option>
+                    <option value="auto" ${workspacePolicy.ai_explain === "auto" ? "selected" : ""}>Auto</option>
+                </select>
+            </div>
+            <button class="btn-ghost" data-workspace-action type="button" onclick="saveWorkspaceAiPolicy(this)">Save workspace policy</button>
+        </div>
     `;
+    toggleWorkspaceAiPolicyControls();
     markPanelSuccess("workspace-agent-profile");
+}
+
+function toggleWorkspaceAiPolicyControls() {
+    const inherit = document.getElementById("workspace-ai-policy-inherit");
+    const controls = document.getElementById("workspace-ai-policy-controls");
+    if (!inherit || !controls) return;
+    controls.hidden = inherit.checked;
+}
+
+async function saveWorkspaceAiPolicy(button = null) {
+    const root = window._workspaceRoot;
+    if (!root) {
+        showWorkspaceFeedback("error", "Open a workspace before changing AI policy.");
+        return;
+    }
+    const inherit = document.getElementById("workspace-ai-policy-inherit")?.checked ?? true;
+    const ai_policy = {
+        ai_generation: document.getElementById("workspace-ai-generation-select")?.value || "off",
+        ai_repair: document.getElementById("workspace-ai-repair-select")?.value || "ask",
+        ai_explain: document.getElementById("workspace-ai-explain-select")?.value || "ask",
+    };
+    setWorkspaceBusy(button, true, "Saving...");
+    clearWorkspaceFeedback();
+    try {
+        const result = await WorkspaceUi.fetchJson("/workspace/ai-policy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ root, inherit, ai_policy }),
+        });
+        if (!result.ok) {
+            showWorkspaceFeedback("error", result.payload.error || "Could not save AI policy.");
+            return;
+        }
+        invalidateWorkspaceUiCache(root);
+        await fetchWorkspaceAgentProfile(root, { force: true });
+        await initializeWorkspace(root, { force: true, source: "policy" });
+        showWorkspaceFeedback("success", "Workspace AI policy saved.");
+    } finally {
+        setWorkspaceBusy(button, false);
+    }
 }
 
 function indexWorkspaceRuns(runs) {
@@ -499,9 +656,15 @@ function normalizeWorkspaceResult(result) {
     if (!("run_output" in normalized)) normalized.run_output = normalized.run.output || "";
     if (!("run_returncode" in normalized)) normalized.run_returncode = normalized.run.returncode;
     if (!("run_coverage" in normalized)) normalized.run_coverage = normalized.run.coverage || null;
-    normalized.planned_files = normalized.planned_files || [];
-    normalized.written_files = normalized.written_files || [];
+    normalized.planned_files = (normalized.planned_files || []).map(normalizeAiMetadata);
+    normalized.written_files = (normalized.written_files || []).map(normalizeAiMetadata);
     normalized.llm_fallback_contexts = normalized.llm_fallback_contexts || [];
+    normalized.failure_categories = normalized.failure_categories || [];
+    normalized.ai_repair_suggestions = normalized.ai_repair_suggestions || [];
+    normalized.ai_repair_status = normalized.ai_repair_status || "skipped";
+    normalized.ai_repair_reason = normalized.ai_repair_reason || "";
+    normalized.ai_repair_requested = Boolean(normalized.ai_repair_requested);
+    normalized.ai_repair_used = Boolean(normalized.ai_repair_used);
     normalized.fallback_context_summary = normalized.fallback_context_summary || {
         count: normalized.llm_fallback_contexts.length,
         estimated_input_tokens: 0,
@@ -547,6 +710,9 @@ function renderWorkspaceOutput(result) {
     const written = data.written_files;
     const fallbacks = data.llm_fallback_contexts;
     const fallbackSummary = data.fallback_context_summary;
+    const aiSummary = getAiSummaryLabel(planned.length ? planned : written);
+    const repairSuggestions = data.ai_repair_suggestions || [];
+    const failureCategories = data.failure_categories || [];
 
     output.classList.remove("error");
 
@@ -578,7 +744,9 @@ function renderWorkspaceOutput(result) {
         <div class="workspace-status-footer workspace-review-chip-row">
             <span class="workspace-chip">${planned.length} planned</span>
             <span class="workspace-chip">${written.length} written</span>
+            <span class="workspace-chip ${aiSummary.className}">${aiSummary.label}</span>
             <span class="workspace-chip ${runStatus.className}">${runStatus.label}</span>
+            <span class="workspace-chip workspace-chip-subtle">Repair ${WorkspaceUi.escapeHtml(data.ai_repair_status)}</span>
             <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(data.run_coverage ? `Coverage ${data.run_coverage}` : "No coverage")}</span>
             <span class="workspace-chip workspace-chip-subtle">${fallbackSummary.count || 0} fallback contexts</span>
             ${fallbackSummary.estimated_cost_usd !== null
@@ -596,6 +764,7 @@ function renderWorkspaceOutput(result) {
             <div class="workspace-list-meta">The last run failed. Re-run failure repair from this review panel or from the run history list.</div>
             <div class="workspace-item-actions">
                 <button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction('fix-failures', true, this)">Fix failures</button>
+                ${canAskForAiRepair() ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this, { use_ai_repair: true })">Repair with AI</button>' : ""}
                 <button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceJob('run-tests', this)">Run workspace tests</button>
             </div>
         </section>
@@ -608,14 +777,20 @@ function renderWorkspaceOutput(result) {
                 <span class="workspace-chip">${planned.length}</span>
             </div>
             <div class="workspace-review-file-list">
-                ${planned.map(item => `
+                ${planned.map(item => {
+                    const aiLabel = getAiLabel(item);
+                    return `
                     <article class="workspace-review-file-card">
                         <div class="workspace-review-file-meta">
                             <div>
                                 <strong>${renderPathText(item.test_path)}</strong>
                                 <div class="workspace-list-meta">${renderPathText(item.source_path)}</div>
+                                ${item.ai_reason ? `<div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.ai_reason)}</div>` : ""}
                             </div>
-                            <span class="workspace-chip">${WorkspaceUi.escapeHtml(item.action)}</span>
+                            <div class="workspace-review-chip-group">
+                                <span class="workspace-chip ${aiLabel.className}">${aiLabel.label}</span>
+                                <span class="workspace-chip">${WorkspaceUi.escapeHtml(item.action)}</span>
+                            </div>
                         </div>
                         ${item.diff ? `
                             <details class="workspace-review-diff">
@@ -624,7 +799,7 @@ function renderWorkspaceOutput(result) {
                             </details>
                         ` : ""}
                     </article>
-                `).join("")}
+                `}).join("")}
             </div>
         </section>
     ` : `
@@ -641,17 +816,22 @@ function renderWorkspaceOutput(result) {
                 <span class="workspace-chip">${written.length}</span>
             </div>
             <div class="workspace-review-file-list">
-                ${written.map(item => `
+                ${written.map(item => {
+                    const aiLabel = getAiLabel(item);
+                    return `
                     <article class="workspace-review-file-card">
                         <div class="workspace-review-file-meta">
                             <div>
                                 <strong>${renderPathText(item.test_path)}</strong>
                                 <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.action)} · ${item.written ? "written" : "preview only"}</div>
                             </div>
-                            <span class="workspace-chip workspace-chip-subtle">${item.managed ? "managed" : "manual review"}</span>
+                            <div class="workspace-review-chip-group">
+                                <span class="workspace-chip ${aiLabel.className}">${aiLabel.label}</span>
+                                <span class="workspace-chip workspace-chip-subtle">${item.managed ? "managed" : "manual review"}</span>
+                            </div>
                         </div>
                     </article>
-                `).join("")}
+                `}).join("")}
             </div>
         </section>
     ` : "";
@@ -682,11 +862,55 @@ function renderWorkspaceOutput(result) {
         </section>
     ` : "";
 
+    const failureCategoriesBlock = failureCategories.length ? `
+        <section class="workspace-review-block">
+            <div class="workspace-review-block-header">
+                <strong>Failure categories</strong>
+                <span class="workspace-chip">${failureCategories.length}</span>
+            </div>
+            <div class="workspace-status-footer workspace-review-chip-row">
+                ${failureCategories.map(item => `
+                    <span class="workspace-chip workspace-chip-subtle">
+                        ${WorkspaceUi.escapeHtml(item.category || "unknown")}${item.test ? ` · ${WorkspaceUi.escapeHtml(item.test)}` : ""}
+                    </span>
+                `).join("")}
+            </div>
+        </section>
+    ` : "";
+
+    const repairSuggestionsBlock = repairSuggestions.length ? `
+        <section class="workspace-review-block">
+            <div class="workspace-review-block-header">
+                <strong>AI repair suggestions</strong>
+                <span class="workspace-chip workspace-chip-ai-used">${repairSuggestions.length}</span>
+            </div>
+            <div class="workspace-review-file-list">
+                ${repairSuggestions.map(item => `
+                    <article class="workspace-review-file-card">
+                        <div class="workspace-review-file-meta">
+                            <div>
+                                <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(item.action || "suggestion"))}</strong>
+                                <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.test_name || item.test_path || "Generated test")}</div>
+                            </div>
+                            ${item.confidence !== null && item.confidence !== undefined
+                                ? `<span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(item.confidence)}</span>`
+                                : ""}
+                        </div>
+                        ${item.reason ? `<div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.reason)}</div>` : ""}
+                        ${item.details ? `<div class="workspace-list-meta">${WorkspaceUi.escapeHtml(item.details)}</div>` : ""}
+                    </article>
+                `).join("")}
+            </div>
+        </section>
+    ` : "";
+
     output.innerHTML = `
         <div class="workspace-review-stack">
             ${summaryCards}
             ${summaryChips}
             ${nextAction}
+            ${failureCategoriesBlock}
+            ${repairSuggestionsBlock}
             ${plannedBlock}
             ${writtenBlock}
             ${fallbackBlock}
@@ -718,7 +942,7 @@ function openWorkspaceRun(historyId) {
     switchWorkspaceTab("review");
 }
 
-async function runWorkspaceAction(action, write, button = null) {
+async function runWorkspaceAction(action, write, button = null, options = {}) {
     const root = window._workspaceRoot;
     if (!root) {
         showWorkspaceFeedback("error", "Open a folder first to use workspace actions.");
@@ -728,7 +952,7 @@ async function runWorkspaceAction(action, write, button = null) {
 
     const output = document.getElementById("output");
     const busyLabel = action === "fix-failures" ? "Repairing..." : (write ? "Writing..." : "Previewing...");
-    window._workspaceLastRequest = { type: "action", action, write };
+    window._workspaceLastRequest = { type: "action", action, write, options };
     setWorkspaceBusy(button, true, busyLabel);
     clearWorkspaceFeedback();
     output.textContent = "Running workspace action...";
@@ -737,6 +961,10 @@ async function runWorkspaceAction(action, write, button = null) {
     try {
         const body = { root, scope: currentWorkspaceScope(), write };
         if (body.scope === "folder") body.folder = root;
+        body.use_ai_generation = confirmAiGeneration(action, write);
+        body.use_ai_repair = action === "fix-failures" && (
+            options.use_ai_repair === true || options.confirm_ai_repair === true && confirmAiRepair()
+        );
 
         const result = await WorkspaceUi.fetchJson(`/workspace/test/${action}`, {
             method: "POST",
@@ -790,7 +1018,12 @@ async function runWorkspaceJob(name, button = null) {
         const result = await WorkspaceUi.fetchJson("/workspace/job/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ root, name }),
+            body: JSON.stringify({
+                root,
+                name,
+                use_ai_generation: name !== "run-tests" && confirmAiGeneration("generate", name !== "generate-tests"),
+                use_ai_repair: name === "fix-failed-tests" && canAskForAiRepair() && confirmAiRepair(),
+            }),
         });
         if (!result.ok) {
             const output = document.getElementById("output");

@@ -1,5 +1,6 @@
 from typing import List
 
+from src.application.ai_policy import AiPolicy
 from src.application.exceptions import ValidationError
 from src.application.models import (
     GenerationResult,
@@ -131,15 +132,34 @@ class SettingsService:
     def __init__(self, repository):
         self._repository = repository
 
-    def save_settings(self, request: SaveSettingsRequest) -> SettingsResult:
-        saved = self._repository.save(
-            api_key=request.api_key,
-            model=request.model,
-            show_hints=request.show_hints,
+    def load_settings(self) -> SettingsResult:
+        loaded = self._repository.load()
+        return SettingsResult(
+            saved=False,
+            model=loaded.get("OPENAI_MODEL", ""),
+            api_key_set=bool(loaded.get("API_KEY")),
+            show_hints=loaded.get("SHOW_HINTS", "1") != "0",
+            ai_policy=AiPolicy.from_dict(loaded.get("ai_policy", {})),
         )
+
+    def save_settings(self, request: SaveSettingsRequest) -> SettingsResult:
+        try:
+            saved = self._repository.save(
+                api_key=request.api_key,
+                model=request.model,
+                show_hints=request.show_hints,
+                ai_policy=request.ai_policy,
+            )
+        except TypeError:
+            saved = self._repository.save(
+                api_key=request.api_key,
+                model=request.model,
+                show_hints=request.show_hints,
+            )
         return SettingsResult(
             saved=True,
             model=saved.get("OPENAI_MODEL", request.model),
             api_key_set=bool(saved.get("API_KEY")),
             show_hints=saved.get("SHOW_HINTS", "1") != "0",
+            ai_policy=AiPolicy.from_dict(saved.get("ai_policy", {})),
         )

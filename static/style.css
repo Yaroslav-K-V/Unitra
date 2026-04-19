@@ -1483,6 +1483,18 @@ button[data-busy="true"] {
     color: var(--text-muted);
 }
 
+.workspace-chip-ai-used {
+    border-color: var(--run-pass-border);
+    background: var(--run-pass-bg);
+    color: var(--run-pass-text);
+}
+
+.workspace-chip-ai-fallback {
+    border-color: var(--run-error-border);
+    background: var(--run-error-bg);
+    color: var(--run-error-text);
+}
+
 .run-idle {
     background: var(--meta-bg);
     color: var(--text-muted);
@@ -1495,6 +1507,34 @@ button[data-busy="true"] {
 
 .workspace-review-chip-row {
     margin-top: 0;
+}
+
+.workspace-review-chip-group {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.workspace-ai-policy-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.workspace-ai-policy-controls {
+    display: grid;
+    gap: 8px;
+}
+
+.workspace-ai-policy-controls[hidden] {
+    display: none;
+}
+
+.workspace-ai-policy-inherit {
+    margin-top: 2px;
 }
 
 .workspace-review-details {

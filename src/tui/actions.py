@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
+from src.application.ai_policy import AiPolicy
 from src.application.models import RunTestsRequest
 from src.application.workspace_models import TestTarget
 from src.config import load_config
@@ -12,6 +13,7 @@ from src.serializers import (
     serialize_job_result,
     serialize_run_history_record,
     serialize_workspace_status,
+    to_dict,
 )
 from src.tui.state import ScreenActionResult, SessionState
 
@@ -47,7 +49,7 @@ class TuiActions:
         result = ScreenActionResult(
             action="workspace.init",
             ok=True,
-            payload={"config": config.__dict__},
+            payload={"config": to_dict(config)},
             message=f"Initialized workspace at {root}",
         )
         session.remember_result(result)
@@ -68,12 +70,37 @@ class TuiActions:
         session.remember_result(result)
         return result
 
-    def run_job(self, session: SessionState, name: str, target_value: str = "", output_policy: str = "") -> ScreenActionResult:
+    def run_job(
+        self,
+        session: SessionState,
+        name: str,
+        target_value: str = "",
+        output_policy: str = "",
+        use_ai_generation: bool = False,
+        use_ai_repair: bool = False,
+    ) -> ScreenActionResult:
         missing = self._require_workspace(session, "job.run")
         if missing:
             return missing
         container = self._workspace_container(session)
-        result = container.jobs.run_job(name, target_value=target_value, output_policy=output_policy)
+        try:
+            result = container.jobs.run_job(
+                name,
+                target_value=target_value,
+                output_policy=output_policy,
+                use_ai_generation=use_ai_generation,
+                use_ai_repair=use_ai_repair,
+            )
+        except TypeError:
+            try:
+                result = container.jobs.run_job(
+                    name,
+                    target_value=target_value,
+                    output_policy=output_policy,
+                    use_ai_generation=use_ai_generation,
+                )
+            except TypeError:
+                result = container.jobs.run_job(name, target_value=target_value, output_policy=output_policy)
         payload = serialize_job_result(result, model=container.config.ai_model)
         action_result = ScreenActionResult(
             action="job.run",
@@ -84,17 +111,29 @@ class TuiActions:
         session.remember_result(action_result)
         return action_result
 
-    def preview_generate(self, session: SessionState) -> ScreenActionResult:
-        return self._targeted_action(session, mode="generate", write=False)
+    def preview_generate(self, session: SessionState, use_ai_generation: bool = False) -> ScreenActionResult:
+        return self._targeted_action(session, mode="generate", write=False, use_ai_generation=use_ai_generation)
 
-    def write_generate(self, session: SessionState) -> ScreenActionResult:
-        return self._targeted_action(session, mode="generate", write=True)
+    def write_generate(self, session: SessionState, use_ai_generation: bool = False) -> ScreenActionResult:
+        return self._targeted_action(session, mode="generate", write=True, use_ai_generation=use_ai_generation)
 
-    def preview_update(self, session: SessionState) -> ScreenActionResult:
-        return self._targeted_action(session, mode="update", write=False)
+    def preview_update(self, session: SessionState, use_ai_generation: bool = False) -> ScreenActionResult:
+        return self._targeted_action(session, mode="update", write=False, use_ai_generation=use_ai_generation)
 
-    def fix_failures(self, session: SessionState, write: bool = True) -> ScreenActionResult:
-        return self._targeted_action(session, mode="fix-failures", write=write)
+    def fix_failures(
+        self,
+        session: SessionState,
+        write: bool = True,
+        use_ai_generation: bool = False,
+        use_ai_repair: bool = False,
+    ) -> ScreenActionResult:
+        return self._targeted_action(
+            session,
+            mode="fix-failures",
+            write=write,
+            use_ai_generation=use_ai_generation,
+            use_ai_repair=use_ai_repair,
+        )
 
     def run_workspace_tests(
         self,
@@ -167,7 +206,23 @@ class TuiActions:
         if missing:
             return missing
         container = self._workspace_container(session)
-        profile = serialize_agent_profile(container.workspace.get_agent_profile(name))
+        global_policy = getattr(container.config, "ai_policy", AiPolicy())
+        if hasattr(container.workspace, "ai_policy_state"):
+            policy_state = container.workspace.ai_policy_state(global_policy)
+        else:
+            policy_state = {
+                "effective_ai_policy": global_policy,
+                "global_ai_policy": global_policy,
+                "workspace_ai_policy": {"inherit": True, **global_policy.to_dict()},
+                "ai_policy_source": "global",
+            }
+        profile = serialize_agent_profile(
+            container.workspace.get_agent_profile(name),
+            effective_ai_policy=policy_state["effective_ai_policy"],
+            global_ai_policy=policy_state["global_ai_policy"],
+            workspace_ai_policy=policy_state["workspace_ai_policy"],
+            ai_policy_source=policy_state["ai_policy_source"],
+        )
         session.selected_agent_profile = profile["name"]
         result = ScreenActionResult(
             action="agent.show",
@@ -266,18 +321,46 @@ class TuiActions:
             message=f"Saved output to {absolute}",
         )
 
-    def _targeted_action(self, session: SessionState, mode: str, write: bool) -> ScreenActionResult:
+    def _targeted_action(
+        self,
+        session: SessionState,
+        mode: str,
+        write: bool,
+        use_ai_generation: bool = False,
+        use_ai_repair: bool = False,
+    ) -> ScreenActionResult:
         missing = self._require_workspace(session, f"test.{mode}")
         if missing:
             return missing
         container = self._workspace_container(session)
         target = session.selected_target.to_test_target(session.active_workspace_root)
-        if mode == "generate":
-            result = container.jobs.generate_tests(target, write=write)
-        elif mode == "update":
-            result = container.jobs.update_tests(target, write=write)
-        else:
-            result = container.jobs.fix_failed_tests(target, write=write)
+        try:
+            if mode == "generate":
+                result = container.jobs.generate_tests(target, write=write, use_ai_generation=use_ai_generation)
+            elif mode == "update":
+                result = container.jobs.update_tests(target, write=write, use_ai_generation=use_ai_generation)
+            else:
+                result = container.jobs.fix_failed_tests(
+                    target,
+                    write=write,
+                    use_ai_generation=use_ai_generation,
+                    use_ai_repair=use_ai_repair,
+                )
+        except TypeError:
+            try:
+                if mode == "generate":
+                    result = container.jobs.generate_tests(target, write=write, use_ai_generation=use_ai_generation)
+                elif mode == "update":
+                    result = container.jobs.update_tests(target, write=write, use_ai_generation=use_ai_generation)
+                else:
+                    result = container.jobs.fix_failed_tests(target, write=write, use_ai_generation=use_ai_generation)
+            except TypeError:
+                if mode == "generate":
+                    result = container.jobs.generate_tests(target, write=write)
+                elif mode == "update":
+                    result = container.jobs.update_tests(target, write=write)
+                else:
+                    result = container.jobs.fix_failed_tests(target, write=write)
         payload = serialize_job_result(result, model=container.config.ai_model)
         action_result = ScreenActionResult(
             action=f"test.{mode}",

@@ -1,4 +1,5 @@
 import ast
+import json
 import logging
 import os
 import re
@@ -33,26 +34,40 @@ Improvements to make:
 - Keep `import pytest` at the top
 """
 
-_chain = None
+REPAIR_SYSTEM_PROMPT = """You are Unitra's Python test repair assistant.
+Return JSON only, with a top-level "suggestions" list.
+Each suggestion must use one action:
+- update_test_expectation
+- remove_edge_case
+- change_expected_exception
+- suggest_source_change
+- needs_human_decision
+Do not rewrite files. Suggest focused, reviewable changes from the provided failure context.
+"""
+
+_chain_cache = {}
 
 
-def _get_chain():
-    global _chain
-    if _chain is not None:
-        return _chain
-    api_key = os.getenv("API_KEY")
+def _get_chain(model: str = "", temperature: float = None, api_key: str = "", system_prompt: str = SYSTEM_PROMPT):
+    api_key = api_key or os.getenv("API_KEY")
     if not api_key:
         raise EnvironmentError("API_KEY not found in .env")
-    llm = ChatOpenAI(model=AI_MODEL, temperature=AI_TEMPERATURE, api_key=api_key)
+    effective_model = model or os.getenv("OPENAI_MODEL") or AI_MODEL
+    effective_temperature = AI_TEMPERATURE if temperature is None else temperature
+    cache_key = (api_key, effective_model, effective_temperature, system_prompt)
+    if cache_key in _chain_cache:
+        return _chain_cache[cache_key]
+    llm = ChatOpenAI(model=effective_model, temperature=effective_temperature, api_key=api_key)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
+        ("system", system_prompt),
         ("human", "{context}"),
     ])
-    _chain = prompt | llm | StrOutputParser()
-    return _chain
+    chain = prompt | llm | StrOutputParser()
+    _chain_cache[cache_key] = chain
+    return chain
 
 
-def run_agent(source_code: str) -> str:
+def run_agent(source_code: str, model: str = "", temperature: float = None, max_context: int = None) -> str:
     """Parse code locally, then improve tests with a single LLM call."""
     functions = parse_functions(source_code)
     classes = parse_classes(source_code)
@@ -81,10 +96,11 @@ def run_agent(source_code: str) -> str:
         summary_parts.append(f"Classes:\n{class_summary}")
     context = "\n\n".join(summary_parts) + f"\n\nBase scaffold:\n{base_tests}"
 
-    if len(context) > AI_MAX_CONTEXT:
-        context = context[:AI_MAX_CONTEXT] + "\n# ... (truncated)"
+    effective_max_context = AI_MAX_CONTEXT if max_context is None else max_context
+    if len(context) > effective_max_context:
+        context = context[:effective_max_context] + "\n# ... (truncated)"
 
-    output: str = _get_chain().invoke({"context": context})
+    output: str = _get_chain(model=model, temperature=temperature).invoke({"context": context})
     output = re.sub(r"^```(?:\w+)?\n(.*)\n```$", r"\1", output.strip(), flags=re.DOTALL)
     output = output.strip()
     try:
@@ -94,7 +110,20 @@ def run_agent(source_code: str) -> str:
     return output
 
 
-def stream_agent(source_code: str):
+def run_repair_agent(context: dict, model: str = "", temperature: float = None, max_context: int = None) -> str:
+    payload = json.dumps(context, ensure_ascii=False, indent=2)
+    effective_max_context = AI_MAX_CONTEXT if max_context is None else max_context
+    if len(payload) > effective_max_context:
+        payload = payload[:effective_max_context] + "\n# ... (truncated)"
+    output: str = _get_chain(
+        model=model,
+        temperature=temperature,
+        system_prompt=REPAIR_SYSTEM_PROMPT,
+    ).invoke({"context": payload})
+    return re.sub(r"^```(?:json)?\n(.*)\n```$", r"\1", output.strip(), flags=re.DOTALL).strip()
+
+
+def stream_agent(source_code: str, model: str = "", temperature: float = None, max_context: int = None):
     """Like run_agent but yields string tokens for SSE streaming."""
     functions = parse_functions(source_code)
     classes = parse_classes(source_code)
@@ -124,10 +153,11 @@ def stream_agent(source_code: str):
         summary_parts.append(f"Classes:\n{class_summary}")
     context = "\n\n".join(summary_parts) + f"\n\nBase scaffold:\n{base_tests}"
 
-    if len(context) > AI_MAX_CONTEXT:
-        context = context[:AI_MAX_CONTEXT] + "\n# ... (truncated)"
+    effective_max_context = AI_MAX_CONTEXT if max_context is None else max_context
+    if len(context) > effective_max_context:
+        context = context[:effective_max_context] + "\n# ... (truncated)"
 
-    for chunk in _get_chain().stream({"context": context}):
+    for chunk in _get_chain(model=model, temperature=temperature).stream({"context": context}):
         if isinstance(chunk, str):
             yield chunk
 

@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from src.application.ai_policy import AiPolicy
+
 
 @dataclass(frozen=True)
 class SourceBundle:
@@ -50,6 +52,7 @@ class SaveSettingsRequest:
     api_key: str = ""
     model: str = ""
     show_hints: Optional[bool] = None
+    ai_policy: Optional[AiPolicy] = None
 
 
 @dataclass(frozen=True)
@@ -58,3 +61,4 @@ class SettingsResult:
     model: str = ""
     api_key_set: bool = False
     show_hints: bool = True
+    ai_policy: AiPolicy = field(default_factory=AiPolicy)

@@ -17,6 +17,19 @@ class StubContainer:
             return [type("Item", (), {"__dict__": {"type": "file", "path": "/tmp/a.py"}})()]
 
     class Settings:
+        def load_settings(self):
+            return type(
+                "Result",
+                (),
+                {
+                    "saved": False,
+                    "model": "gpt-5.4-mini",
+                    "api_key_set": False,
+                    "show_hints": True,
+                    "ai_policy": cli_module.AiPolicy(),
+                },
+            )()
+
         def save_settings(self, request):
             return type(
                 "Result",
@@ -26,6 +39,7 @@ class StubContainer:
                     "model": request.model or "gpt-5.4-mini",
                     "api_key_set": bool(request.api_key),
                     "show_hints": True if request.show_hints is None else request.show_hints,
+                    "ai_policy": request.ai_policy or cli_module.AiPolicy(),
                 },
             )()
 
@@ -38,6 +52,7 @@ class StubContainer:
         self.recent = self.Recent()
         self.settings = self.Settings()
         self.ai_generation = self.AiGeneration()
+        self.config = type("Config", (), {"ai_policy": cli_module.AiPolicy()})()
         self.test_runner = type("Runner", (), {"run_tests": lambda self, request: type("RunResult", (), {"output": "FAILED", "returncode": 1, "coverage": None})()})()
 
 
@@ -79,6 +94,26 @@ def test_cli_settings_set_json(monkeypatch):
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
     assert payload["result"]["model"] == "gpt-x"
+
+
+def test_cli_settings_show_and_set_ai_policy(monkeypatch):
+    monkeypatch.setattr(cli_module, "get_container", lambda: StubContainer())
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "settings", "set", "--ai-generation", "ask", "--ai-repair", "auto"])
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["ai_policy"]["ai_generation"] == "ask"
+    assert payload["result"]["ai_policy"]["ai_repair"] == "auto"
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "settings", "show"])
+
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["ai_policy"]["ai_generation"] == "off"
 
 
 def test_cli_handles_validation_error(monkeypatch):

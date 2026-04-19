@@ -24,6 +24,12 @@ class RunHistoryRepository:
             "run_returncode": result.run_returncode,
             "run_coverage": result.run_coverage,
             "llm_fallback_contexts": result.llm_fallback_contexts,
+            "failure_categories": result.failure_categories,
+            "ai_repair_suggestions": result.ai_repair_suggestions,
+            "ai_repair_requested": result.ai_repair_requested,
+            "ai_repair_used": result.ai_repair_used,
+            "ai_repair_status": result.ai_repair_status,
+            "ai_repair_reason": result.ai_repair_reason,
         }
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)

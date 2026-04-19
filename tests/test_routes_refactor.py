@@ -3,6 +3,7 @@ import os
 import pytest
 
 flask = pytest.importorskip("flask")
+from src.application.ai_policy import AiPolicy, WorkspaceAiPolicy
 from routes.generate import generate_bp
 from routes.pages import pages_bp
 from routes.runner import runner_bp
@@ -42,6 +43,7 @@ class StubContainer:
     class Config:
         root_path = "."
         ai_model = "gpt-5.4-mini"
+        ai_policy = AiPolicy()
 
     class Workspace:
         def init_workspace(self, root):
@@ -58,6 +60,39 @@ class StubContainer:
                     "recent_runs": ["abc"],
                 },
             )()
+
+        def active_agent_profile(self):
+            return type(
+                "Profile",
+                (),
+                {
+                    "__dict__": {
+                        "name": "default",
+                        "model": "gpt-5.4-mini",
+                        "roles_enabled": ["generator"],
+                        "input_token_budget": 4000,
+                        "output_token_budget": 800,
+                        "failure_mode": "report",
+                    }
+                },
+            )()
+
+        def ai_policy_state(self, global_policy):
+            return {
+                "effective_ai_policy": global_policy,
+                "global_ai_policy": global_policy,
+                "workspace_ai_policy": WorkspaceAiPolicy(),
+                "ai_policy_source": "global",
+            }
+
+        def save_ai_policy(self, global_policy, inherit=True, policy_values=None):
+            workspace_policy = WorkspaceAiPolicy.from_dict({"inherit": inherit, **(policy_values or {})})
+            return {
+                "effective_ai_policy": workspace_policy.effective(global_policy),
+                "global_ai_policy": global_policy,
+                "workspace_ai_policy": workspace_policy,
+                "ai_policy_source": workspace_policy.source(),
+            }
 
     class Jobs:
         def list_jobs(self):
@@ -248,6 +283,9 @@ def test_workspace_runs_route_prefers_workspace_history_service(monkeypatch):
         "run",
         "llm_fallback_contexts",
         "fallback_context_summary",
+        "failure_categories",
+        "ai_repair_suggestions",
+        "ai_repair_status",
     }
     assert container.workspace.list_calls == 1
     assert container.workspace.get_calls == 1
@@ -261,6 +299,65 @@ def test_workspace_generate_route_uses_service(monkeypatch):
     response = client.post("/workspace/test/generate", json={"root": "/tmp/project", "scope": "repo", "write": False})
     assert response.status_code == 200
     assert response.get_json()["job_name"] == "ad-hoc-generate"
+
+
+def test_workspace_fix_failures_route_passes_ai_repair_flag(monkeypatch):
+    import routes.workspace as workspace_module
+
+    container = StubContainer()
+    seen = {}
+
+    def fix_failed_tests(target, write=False, use_ai_generation=False, use_ai_repair=False):
+        seen["use_ai_repair"] = use_ai_repair
+        return container.jobs.run_job("ad-hoc-fix")
+
+    container.jobs.fix_failed_tests = fix_failed_tests
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: container)
+    client = _build_app().test_client()
+    response = client.post(
+        "/workspace/test/fix-failures",
+        json={"root": "/tmp/project", "scope": "repo", "write": True, "use_ai_repair": True},
+    )
+
+    assert response.status_code == 200
+    assert seen["use_ai_repair"] is True
+
+
+def test_workspace_agent_profile_includes_ai_policy(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+    response = client.get("/workspace/agent-profile?root=/tmp/project")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["effective_ai_policy"]["ai_generation"] == "off"
+    assert payload["workspace_ai_policy"]["inherit"] is True
+    assert payload["ai_policy_source"] == "global"
+
+
+def test_workspace_ai_policy_routes_read_and_save(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+
+    read_response = client.get("/workspace/ai-policy?root=/tmp/project")
+    save_response = client.post(
+        "/workspace/ai-policy",
+        json={
+            "root": "/tmp/project",
+            "inherit": False,
+            "ai_policy": {"ai_generation": "ask", "ai_repair": "auto", "ai_explain": "off"},
+        },
+    )
+
+    assert read_response.status_code == 200
+    assert read_response.get_json()["effective_ai_policy"]["ai_generation"] == "off"
+    assert save_response.status_code == 200
+    assert save_response.get_json()["effective_ai_policy"]["ai_generation"] == "ask"
+    assert save_response.get_json()["workspace_ai_policy"]["inherit"] is False
 
 
 def test_project_redirects_to_workspace():

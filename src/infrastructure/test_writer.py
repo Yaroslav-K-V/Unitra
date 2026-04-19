@@ -21,6 +21,10 @@ class TestWriter:
                     action=plan.action,
                     written=written,
                     managed=plan.managed,
+                    ai_attempted=plan.ai_attempted,
+                    ai_used=plan.ai_used,
+                    ai_status=plan.ai_status,
+                    ai_reason=plan.ai_reason,
                 )
             )
         return results

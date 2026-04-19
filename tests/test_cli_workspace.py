@@ -3,6 +3,7 @@ import json
 from contextlib import redirect_stdout
 
 import src.cli as cli_module
+from src.application.ai_policy import WorkspaceAiPolicy
 
 
 class StubWorkspaceContainer:
@@ -55,6 +56,23 @@ class StubWorkspaceContainer:
         def get_agent_profile(self, name):
             return type("Profile", (), {"__dict__": {"name": name, "model": "gpt-5.4-mini"}})()
 
+        def ai_policy_state(self, global_policy):
+            return {
+                "effective_ai_policy": global_policy,
+                "global_ai_policy": global_policy,
+                "workspace_ai_policy": {"inherit": True, **global_policy.to_dict()},
+                "ai_policy_source": "global",
+            }
+
+        def save_ai_policy(self, global_policy, inherit=True, policy_values=None):
+            workspace_policy = WorkspaceAiPolicy.from_dict({"inherit": inherit, **(policy_values or {})})
+            return {
+                "effective_ai_policy": workspace_policy.effective(global_policy),
+                "global_ai_policy": global_policy,
+                "workspace_ai_policy": workspace_policy,
+                "ai_policy_source": workspace_policy.source(),
+            }
+
     class Jobs:
         def list_jobs(self):
             return ["generate-tests", "run-tests"]
@@ -97,7 +115,7 @@ class StubWorkspaceContainer:
         self.test_runner = None
         self.recent = None
         self.settings = None
-        self.config = type("Config", (), {"ai_model": "gpt-5.4-mini"})()
+        self.config = type("Config", (), {"ai_model": "gpt-5.4-mini", "ai_policy": cli_module.AiPolicy()})()
 
 
 def test_cli_workspace_init_json(monkeypatch):
@@ -139,6 +157,37 @@ def test_cli_workspace_status_defaults_to_current_working_directory(monkeypatch,
     assert payload["workspace_root"] == str(tmp_path)
 
 
+def test_cli_workspace_ai_policy_show_and_set(monkeypatch):
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubWorkspaceContainer())
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "workspace", "ai-policy", "show", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["effective_ai_policy"]["ai_generation"] == "off"
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main([
+            "--json",
+            "workspace",
+            "ai-policy",
+            "set",
+            "--root",
+            "/tmp/repo",
+            "--no-inherit",
+            "--ai-generation",
+            "ask",
+            "--ai-repair",
+            "auto",
+        ])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["workspace_ai_policy"]["inherit"] is False
+    assert payload["result"]["effective_ai_policy"]["ai_generation"] == "ask"
+
+
 def test_cli_job_list(monkeypatch):
     monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubWorkspaceContainer())
     stdout = io.StringIO()
@@ -157,6 +206,33 @@ def test_cli_test_generate_json(monkeypatch):
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
     assert payload["job_name"] == "ad-hoc-generate"
+
+
+def test_cli_test_fix_failures_passes_ai_repair_flag(monkeypatch):
+    container = StubWorkspaceContainer()
+    seen = {}
+
+    def fix_failed_tests(target, write=False, use_ai_generation=False, use_ai_repair=False):
+        seen["use_ai_repair"] = use_ai_repair
+        return container.jobs.run_job("ad-hoc-fix")
+
+    container.jobs.fix_failed_tests = fix_failed_tests
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: container)
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main([
+            "--json",
+            "test",
+            "fix-failures",
+            "--root",
+            "/tmp/repo",
+            "--repo",
+            "--use-ai-repair",
+        ])
+
+    assert exit_code == 0
+    assert seen["use_ai_repair"] is True
 
 
 def test_cli_workspace_validate_json(monkeypatch):

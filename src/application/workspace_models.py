@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from src.application.ai_policy import WorkspaceAiPolicy
+
 
 MANAGED_HEADER = "# Managed by Unitra. Do not edit generated sections by hand."
 USER_BLOCK_BEGIN = "# >>> UNITRA:USER:BEGIN"
@@ -17,6 +19,7 @@ class WorkspaceConfig:
     naming_strategy: str = "test_{module}.py"
     preferred_pytest_args: List[str] = field(default_factory=lambda: ["-q"])
     selected_agent_profile: str = "default"
+    ai_policy: WorkspaceAiPolicy = field(default_factory=WorkspaceAiPolicy)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,10 @@ class WritePlan:
     diff: str
     managed: bool
     preserved_user_block: str = ""
+    ai_attempted: Optional[bool] = None
+    ai_used: Optional[bool] = None
+    ai_status: str = "unknown"
+    ai_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,10 @@ class ManagedFileResult:
     action: str
     written: bool
     managed: bool
+    ai_attempted: Optional[bool] = None
+    ai_used: Optional[bool] = None
+    ai_status: str = "unknown"
+    ai_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,6 +86,8 @@ class JobDefinition:
     coverage: bool = False
     timeout: int = 30
     agent_profile: str = "default"
+    use_ai_generation: bool = False
+    use_ai_repair: bool = False
 
 
 @dataclass(frozen=True)
@@ -88,6 +101,12 @@ class JobRunResult:
     run_returncode: Optional[int] = None
     run_coverage: Optional[str] = None
     llm_fallback_contexts: List[dict] = field(default_factory=list)
+    failure_categories: List[dict] = field(default_factory=list)
+    ai_repair_suggestions: List[dict] = field(default_factory=list)
+    ai_repair_requested: bool = False
+    ai_repair_used: bool = False
+    ai_repair_status: str = "skipped"
+    ai_repair_reason: str = ""
     history_id: str = ""
 
 
@@ -128,6 +147,10 @@ class GenerationArtifact:
     test_path: str
     generated_code: str
     reviewer_notes: List[str]
+    ai_attempted: Optional[bool] = None
+    ai_used: Optional[bool] = None
+    ai_status: str = "unknown"
+    ai_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -137,3 +160,5 @@ class FailureAnalysisArtifact:
     recommendations: List[str]
     failure_tests: List[str] = field(default_factory=list)
     llm_fallback_context: Optional[dict] = None
+    failure_categories: List[dict] = field(default_factory=list)
+    run_output: str = ""

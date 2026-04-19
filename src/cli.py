@@ -5,17 +5,20 @@ import time
 import sys
 from typing import List, Optional
 
+from src.application.ai_policy import AiPolicy
 from src.application.exceptions import DependencyError, ValidationError
 from src.application.models import RunTestsRequest, SaveSettingsRequest
 from src.application.workspace_models import TestTarget
 from src.config import load_config
 from src.container import build_container, get_container
 from src.serializers import (
+    serialize_ai_policy,
     serialize_agent_profile,
     serialize_job_definition,
     serialize_job_result,
     serialize_run_history_record,
     serialize_workspace_status,
+    to_dict,
 )
 
 
@@ -65,12 +68,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     settings = subparsers.add_parser("settings", help="Manage settings.")
     settings_subparsers = settings.add_subparsers(dest="settings_command", required=True)
+    settings_subparsers.add_parser("show", help="Show persisted settings.")
     settings_set = settings_subparsers.add_parser("set", help="Persist settings.")
     settings_set.add_argument("--api-key", default="", help="API key to save.")
     settings_set.add_argument("--model", default="", help="Model name to save.")
     settings_set.add_argument("--show-hints", dest="show_hints", action="store_true", help="Show helper hints.")
     settings_set.add_argument("--hide-hints", dest="show_hints", action="store_false", help="Hide helper hints.")
     settings_set.set_defaults(show_hints=None)
+    settings_set.add_argument("--ai-generation", choices=["off", "ask"], default=None, help="Default AI behavior for generation.")
+    settings_set.add_argument("--ai-repair", choices=["off", "ask", "auto"], default=None, help="Default AI behavior for repair.")
+    settings_set.add_argument("--ai-explain", choices=["off", "ask", "auto"], default=None, help="Default AI behavior for explanations.")
 
     workspace = subparsers.add_parser("workspace", help="Manage Unitra workspace.")
     workspace_subparsers = workspace.add_subparsers(dest="workspace_command", required=True)
@@ -80,6 +87,19 @@ def build_parser() -> argparse.ArgumentParser:
     workspace_status.add_argument("--root", default=".", help="Workspace root directory.")
     workspace_validate = workspace_subparsers.add_parser("validate", help="Validate workspace metadata.")
     workspace_validate.add_argument("--root", default=".", help="Workspace root directory.")
+    workspace_policy = workspace_subparsers.add_parser("ai-policy", help="Manage workspace AI policy override.")
+    workspace_policy_subparsers = workspace_policy.add_subparsers(dest="policy_command", required=True)
+    workspace_policy_show = workspace_policy_subparsers.add_parser("show", help="Show workspace AI policy.")
+    workspace_policy_show.add_argument("--root", default=".", help="Workspace root directory.")
+    workspace_policy_set = workspace_policy_subparsers.add_parser("set", help="Persist workspace AI policy.")
+    workspace_policy_set.add_argument("--root", default=".", help="Workspace root directory.")
+    inherit_group = workspace_policy_set.add_mutually_exclusive_group()
+    inherit_group.add_argument("--inherit", dest="inherit", action="store_true", help="Use global AI settings.")
+    inherit_group.add_argument("--no-inherit", dest="inherit", action="store_false", help="Customize this workspace.")
+    workspace_policy_set.set_defaults(inherit=None)
+    workspace_policy_set.add_argument("--ai-generation", choices=["off", "ask"], default=None, help="Workspace AI behavior for generation.")
+    workspace_policy_set.add_argument("--ai-repair", choices=["off", "ask", "auto"], default=None, help="Workspace AI behavior for repair.")
+    workspace_policy_set.add_argument("--ai-explain", choices=["off", "ask", "auto"], default=None, help="Workspace AI behavior for explanations.")
 
     job = subparsers.add_parser("job", help="Manage saved jobs.")
     job_subparsers = job.add_subparsers(dest="job_command", required=True)
@@ -136,6 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
         scope.add_argument("--changed", action="store_true", help="Target changed Python files from git diff HEAD.")
         sub.add_argument("--write", action="store_true", help="Write files instead of preview only.")
         sub.add_argument("--dry-run", action="store_true", help="Explicitly keep the operation in preview mode.")
+        sub.add_argument("--use-ai", action="store_true", help="Allow an AI generation call for this run when policy permits it.")
+        if name == "fix-failures":
+            sub.add_argument("--use-ai-repair", action="store_true", help="Allow AI repair suggestions when policy permits it.")
 
     test_run = test_subparsers.add_parser("run", help="Run workspace tests.")
     test_run.add_argument("--root", default=".", help="Workspace root directory.")
@@ -217,17 +240,37 @@ def _dispatch(args):
         return _success("recent list", result=[item.__dict__ for item in container.recent.list_recent()]), 0
     if args.command == "settings" and args.settings_command == "set":
         container = get_container()
+        config = getattr(container, "config", None)
+        ai_policy = _ai_policy_from_args(args, base=getattr(config, "ai_policy", AiPolicy()))
         result = container.settings.save_settings(
-            SaveSettingsRequest(api_key=args.api_key, model=args.model, show_hints=args.show_hints)
+            SaveSettingsRequest(api_key=args.api_key, model=args.model, show_hints=args.show_hints, ai_policy=ai_policy)
         )
         return _success(
             "settings set",
-            result={"ok": result.saved, "model": result.model, "api_key_set": result.api_key_set, "show_hints": result.show_hints},
+            result={
+                "ok": result.saved,
+                "model": result.model,
+                "api_key_set": result.api_key_set,
+                "show_hints": result.show_hints,
+                "ai_policy": getattr(result, "ai_policy", AiPolicy()).to_dict(),
+            },
+        ), 0
+    if args.command == "settings" and args.settings_command == "show":
+        container = get_container()
+        result = container.settings.load_settings()
+        return _success(
+            "settings show",
+            result={
+                "model": result.model,
+                "api_key_set": result.api_key_set,
+                "show_hints": result.show_hints,
+                "ai_policy": result.ai_policy.to_dict(),
+            },
         ), 0
     if args.command == "workspace":
         container = _container_for_root(args.root)
         if args.workspace_command == "init":
-            return _success("workspace init", workspace_root=_workspace_root(args.root), result=container.workspace.init_workspace(args.root).__dict__), 0
+            return _success("workspace init", workspace_root=_workspace_root(args.root), result=to_dict(container.workspace.init_workspace(args.root))), 0
         if args.workspace_command == "status":
             status = container.workspace.status()
             return _success("workspace status", workspace_root=_workspace_root(args.root), result=serialize_workspace_status(status)), 0
@@ -237,6 +280,22 @@ def _dispatch(args):
                 "workspace validate",
                 workspace_root=_workspace_root(args.root),
                 result={"valid": True, **serialize_workspace_status(status)},
+            ), 0
+        if args.workspace_command == "ai-policy":
+            if args.policy_command == "show":
+                state = container.workspace.ai_policy_state(container.config.ai_policy)
+                return _success(
+                    "workspace ai-policy show",
+                    workspace_root=_workspace_root(args.root),
+                    result=_serialize_ai_policy_state(state),
+                ), 0
+            inherit = True if args.inherit is None else args.inherit
+            policy_values = _ai_policy_values_from_args(args)
+            state = container.workspace.save_ai_policy(container.config.ai_policy, inherit=inherit, policy_values=policy_values)
+            return _success(
+                "workspace ai-policy set",
+                workspace_root=_workspace_root(args.root),
+                result=_serialize_ai_policy_state(state),
             ), 0
     if args.command == "job":
         container = _container_for_root(args.root)
@@ -290,15 +349,21 @@ def _dispatch(args):
             return payload, _job_exit_code(result)
         target = _parse_target(args)
         if args.test_command == "generate":
-            result = container.jobs.generate_tests(target, write=_should_write(args))
+            result = _call_workspace_generation(container.jobs.generate_tests, target, write=_should_write(args), use_ai_generation=args.use_ai)
             payload = _job_command_success("test generate", result, workspace_root=_workspace_root(args.root), model=container.config.ai_model, include_cost=args.estimate_cost)
             return payload, _job_exit_code(result)
         if args.test_command == "update":
-            result = container.jobs.update_tests(target, write=_should_write(args))
+            result = _call_workspace_generation(container.jobs.update_tests, target, write=_should_write(args), use_ai_generation=args.use_ai)
             payload = _job_command_success("test update", result, workspace_root=_workspace_root(args.root), model=container.config.ai_model, include_cost=args.estimate_cost)
             return payload, _job_exit_code(result)
         if args.test_command == "fix-failures":
-            result = container.jobs.fix_failed_tests(target, write=_should_write(args))
+            result = _call_workspace_generation(
+                container.jobs.fix_failed_tests,
+                target,
+                write=_should_write(args),
+                use_ai_generation=args.use_ai,
+                use_ai_repair=getattr(args, "use_ai_repair", False),
+            )
             payload = _job_command_success("test fix-failures", result, workspace_root=_workspace_root(args.root), model=container.config.ai_model, include_cost=args.estimate_cost)
             return payload, _job_exit_code(result)
     raise ValidationError("Unsupported command")
@@ -391,6 +456,44 @@ def _parse_target(args) -> TestTarget:
     elif getattr(args, "repo", False):
         scope = "repo"
     return TestTarget(scope=scope, workspace_root=_workspace_root(args.root), folder=folder, paths=paths)
+
+
+def _ai_policy_values_from_args(args) -> dict:
+    values = {}
+    if getattr(args, "ai_generation", None) is not None:
+        values["ai_generation"] = args.ai_generation
+    if getattr(args, "ai_repair", None) is not None:
+        values["ai_repair"] = args.ai_repair
+    if getattr(args, "ai_explain", None) is not None:
+        values["ai_explain"] = args.ai_explain
+    return values
+
+
+def _ai_policy_from_args(args, base: AiPolicy) -> Optional[AiPolicy]:
+    values = _ai_policy_values_from_args(args)
+    if not values:
+        return None
+    return AiPolicy.from_dict(values, base=base)
+
+
+def _call_workspace_generation(action, target: TestTarget, write: bool, use_ai_generation: bool, use_ai_repair: bool = False):
+    try:
+        return action(target, write=write, use_ai_generation=use_ai_generation, use_ai_repair=use_ai_repair)
+    except TypeError:
+        try:
+            return action(target, write=write, use_ai_generation=use_ai_generation)
+        except TypeError:
+            return action(target, write=write)
+
+
+def _serialize_ai_policy_state(state: dict) -> dict:
+    return {
+        "effective_ai_policy": serialize_ai_policy(state["effective_ai_policy"]),
+        "global_ai_policy": serialize_ai_policy(state["global_ai_policy"]),
+        "workspace_ai_policy": serialize_ai_policy(state["workspace_ai_policy"]),
+        "ai_policy_source": state["ai_policy_source"],
+    }
+
 
 def _success(command: str, workspace_root: str = "", result=None, **extra) -> dict:
     return {

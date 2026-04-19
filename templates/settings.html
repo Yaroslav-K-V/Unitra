@@ -40,6 +40,28 @@
                 </label>
             </div>
 
+            <div class="settings-group">
+                <label class="section-label">AI behavior</label>
+                <p class="settings-hint hint-toggle">Defaults for new and inherited workspaces. API access still requires a local key in <code>.env</code>.</p>
+                <label class="settings-hint" for="ai-generation-select">Generation</label>
+                <select id="ai-generation-select" class="settings-select">
+                    <option value="off" {% if current_ai_policy.ai_generation == "off" %}selected{% endif %}>Off</option>
+                    <option value="ask" {% if current_ai_policy.ai_generation == "ask" %}selected{% endif %}>Ask first</option>
+                </select>
+                <label class="settings-hint" for="ai-repair-select">Repair</label>
+                <select id="ai-repair-select" class="settings-select">
+                    <option value="off" {% if current_ai_policy.ai_repair == "off" %}selected{% endif %}>Off</option>
+                    <option value="ask" {% if current_ai_policy.ai_repair == "ask" %}selected{% endif %}>Ask first</option>
+                    <option value="auto" {% if current_ai_policy.ai_repair == "auto" %}selected{% endif %}>Auto</option>
+                </select>
+                <label class="settings-hint" for="ai-explain-select">Explain failures</label>
+                <select id="ai-explain-select" class="settings-select">
+                    <option value="off" {% if current_ai_policy.ai_explain == "off" %}selected{% endif %}>Off</option>
+                    <option value="ask" {% if current_ai_policy.ai_explain == "ask" %}selected{% endif %}>Ask first</option>
+                    <option value="auto" {% if current_ai_policy.ai_explain == "auto" %}selected{% endif %}>Auto</option>
+                </select>
+            </div>
+
             <div class="settings-group settings-info-box">
                 <label class="section-label">Need context?</label>
                 <p class="settings-hint hint-toggle">Open Info for a short explanation of Quick, Workspace, privacy notes, and product identity.</p>
@@ -61,10 +83,15 @@ async function saveSettings() {
     const api_key = document.getElementById("api-key").value.trim();
     const model = document.getElementById("model-select").value;
     const show_hints = document.getElementById("show-hints-toggle").checked;
+    const ai_policy = {
+        ai_generation: document.getElementById("ai-generation-select").value,
+        ai_repair: document.getElementById("ai-repair-select").value,
+        ai_explain: document.getElementById("ai-explain-select").value,
+    };
     const res = await fetch("/settings/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key, model, show_hints })
+        body: JSON.stringify({ api_key, model, show_hints, ai_policy })
     });
     const data = await res.json();
     if (data.ok) {

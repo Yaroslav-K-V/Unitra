@@ -1,3 +1,4 @@
+from src.application.ai_policy import AiPolicy
 from src.application.exceptions import DependencyError, ValidationError
 from src.application.models import RunTestsRequest, SaveSettingsRequest
 from src.application.services import (
@@ -8,6 +9,8 @@ from src.application.services import (
     TestRunService as AppTestRunService,
 )
 from src.config import load_config
+from src.infrastructure.ai_runner import AgentAiRunner
+from src.infrastructure.settings_repository import EnvSettingsRepository
 from src.infrastructure.source_loader import SourceLoader
 
 
@@ -170,6 +173,118 @@ def test_settings_service_returns_result():
     assert result.model == "gpt-test"
     assert result.api_key_set is True
     assert result.show_hints is False
+
+
+def test_ai_policy_defaults_and_validation():
+    policy = AiPolicy()
+    assert policy.to_dict() == {
+        "ai_generation": "off",
+        "ai_repair": "ask",
+        "ai_explain": "ask",
+    }
+    try:
+        AiPolicy(ai_generation="auto")
+    except ValidationError as exc:
+        assert "ai_generation" in str(exc)
+    else:
+        raise AssertionError("ValidationError was not raised")
+
+
+def test_settings_repository_uses_json_for_preferences_and_env_for_secret(tmp_path):
+    env_path = tmp_path / ".env"
+    settings_path = tmp_path / "data" / "settings.json"
+    env_path.write_text("API_KEY=secret\nOPENAI_MODEL=legacy-model\nSHOW_HINTS=0\n", encoding="utf-8")
+    repo = EnvSettingsRepository(str(env_path), default_model="default-model", settings_path=str(settings_path))
+
+    saved = repo.save(model="json-model", show_hints=True, ai_policy=AiPolicy(ai_generation="ask", ai_repair="auto"))
+
+    assert saved["API_KEY"] == "secret"
+    assert saved["OPENAI_MODEL"] == "json-model"
+    assert saved["SHOW_HINTS"] == "1"
+    assert saved["ai_policy"]["ai_generation"] == "ask"
+    assert "json-model" not in env_path.read_text(encoding="utf-8")
+    assert "API_KEY=secret" in env_path.read_text(encoding="utf-8")
+    assert settings_path.exists()
+
+
+def test_load_config_reads_settings_json_after_legacy_env(tmp_path, monkeypatch):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        '{"model": "json-model", "show_hints": true, "ai_policy": {"ai_generation": "ask"}}',
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text("OPENAI_MODEL=legacy-model\nSHOW_HINTS=0\n", encoding="utf-8")
+    monkeypatch.setenv("UNITRA_SETTINGS_PATH", str(settings_path))
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("SHOW_HINTS", raising=False)
+
+    config = load_config(root_path=str(tmp_path))
+
+    assert config.ai_model == "json-model"
+    assert config.show_hints is True
+    assert config.ai_policy.ai_generation == "ask"
+
+
+def test_agent_ai_runner_passes_effective_config(monkeypatch, tmp_path):
+    import src.infrastructure.ai_runner as ai_runner_module
+
+    captured = {}
+
+    def fake_run_agent(source_code, model="", temperature=None, max_context=None):
+        captured.update({
+            "source_code": source_code,
+            "model": model,
+            "temperature": temperature,
+            "max_context": max_context,
+        })
+        return "ok"
+
+    monkeypatch.setattr(ai_runner_module, "run_agent", fake_run_agent)
+    runner = AgentAiRunner(
+        env_path=str(tmp_path / ".env"),
+        model="gpt-test",
+        temperature=0.4,
+        max_context=1234,
+    )
+
+    assert runner.run("def add(a, b): return a + b") == "ok"
+    assert captured == {
+        "source_code": "def add(a, b): return a + b",
+        "model": "gpt-test",
+        "temperature": 0.4,
+        "max_context": 1234,
+    }
+
+
+def test_agent_ai_runner_repair_parses_structured_suggestions(monkeypatch, tmp_path):
+    import src.infrastructure.ai_runner as ai_runner_module
+
+    captured = {}
+
+    def fake_run_repair_agent(context, model="", temperature=None, max_context=None):
+        captured.update({
+            "context": context,
+            "model": model,
+            "temperature": temperature,
+            "max_context": max_context,
+        })
+        return '{"suggestions": [{"action": "remove_edge_case", "reason": "bad edge"}]}'
+
+    monkeypatch.setattr(ai_runner_module, "run_repair_agent", fake_run_repair_agent)
+    runner = AgentAiRunner(
+        env_path=str(tmp_path / ".env"),
+        model="gpt-test",
+        temperature=0.4,
+        max_context=1234,
+    )
+
+    suggestions = runner.repair({"failure_tests": ["test_add"]})
+
+    assert suggestions == [{"action": "remove_edge_case", "reason": "bad edge"}]
+    assert captured["context"]["failure_tests"] == ["test_add"]
+    assert captured["model"] == "gpt-test"
+    assert captured["temperature"] == 0.4
+    assert captured["max_context"] == 1234
 
 
 def test_load_config_reads_show_hints_from_root_env(tmp_path, monkeypatch):

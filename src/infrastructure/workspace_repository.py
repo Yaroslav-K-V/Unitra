@@ -2,6 +2,7 @@ import os
 from typing import List
 
 from src.application.exceptions import ValidationError
+from src.application.ai_policy import WorkspaceAiPolicy
 from src.application.workspace_models import WorkspaceConfig
 from src.infrastructure.simple_toml import dumps, loads
 
@@ -31,6 +32,7 @@ class WorkspaceRepository:
         output = raw.get("output", {})
         run = raw.get("run", {})
         agent = raw.get("agent", {})
+        ai_policy = raw.get("ai_policy", {})
         return WorkspaceConfig(
             root_path=self.workspace_root,
             source_include=list(workspace.get("source_include", ["**/*.py"])),
@@ -40,6 +42,7 @@ class WorkspaceRepository:
             naming_strategy=output.get("naming_strategy", "test_{module}.py"),
             preferred_pytest_args=list(run.get("preferred_pytest_args", ["-q"])),
             selected_agent_profile=agent.get("selected_profile", "default"),
+            ai_policy=WorkspaceAiPolicy.from_dict(ai_policy),
         )
 
     def save_config(self, config: WorkspaceConfig) -> None:
@@ -61,8 +64,24 @@ class WorkspaceRepository:
             "agent": {
                 "selected_profile": config.selected_agent_profile,
             },
+            "ai_policy": config.ai_policy.to_dict(),
         })
         self._write(self.config_path, text)
+
+    def save_ai_policy(self, ai_policy: WorkspaceAiPolicy) -> WorkspaceAiPolicy:
+        config = self.load_config()
+        self.save_config(WorkspaceConfig(
+            root_path=config.root_path,
+            source_include=config.source_include,
+            source_exclude=config.source_exclude,
+            test_root=config.test_root,
+            test_path_strategy=config.test_path_strategy,
+            naming_strategy=config.naming_strategy,
+            preferred_pytest_args=config.preferred_pytest_args,
+            selected_agent_profile=config.selected_agent_profile,
+            ai_policy=ai_policy,
+        ))
+        return ai_policy
 
     def list_job_names(self) -> List[str]:
         if not os.path.isdir(self.jobs_dir):

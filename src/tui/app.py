@@ -131,7 +131,7 @@ if TEXTUAL_AVAILABLE:
                     yield Static("", id="hint-output", classes="output")
                     yield Static("Session", classes="screen-title")
                     yield Static("", id="session-output", classes="output")
-            yield Input(placeholder="Command: open /repo | init /repo | target changed | preview | write | run | fix | runs | agent default", id="command-input")
+            yield Input(placeholder="Command: open /repo | init /repo | target changed | preview [ai] | write [ai] | run | fix [ai] | runs | agent default", id="command-input")
             yield Footer()
 
         def _compose_workspace_section(self) -> ComposeResult:
@@ -290,13 +290,20 @@ if TEXTUAL_AVAILABLE:
                 self.query_one("#target-value-input", Input).value = value
                 self._set_target(scope)
             elif name == "preview":
-                self._run_action(self.actions.preview_generate(self.session))
+                self._run_action(self.actions.preview_generate(self.session, use_ai_generation="ai" in rest))
             elif name == "write":
-                self._run_action(self.actions.write_generate(self.session))
+                self._run_action(self.actions.write_generate(self.session, use_ai_generation="ai" in rest))
             elif name == "run":
                 self._run_action(self.actions.run_workspace_tests(self.session))
             elif name == "fix":
-                self._run_action(self.actions.fix_failures(self.session, write=True))
+                self._run_action(
+                    self.actions.fix_failures(
+                        self.session,
+                        write=True,
+                        use_ai_generation="ai" in rest,
+                        use_ai_repair="repair" in rest or "ai-repair" in rest,
+                    )
+                )
             elif name == "runs":
                 self._run_action(self.actions.list_runs(self.session))
                 self._set_screen("runs")
@@ -497,6 +504,8 @@ if TEXTUAL_AVAILABLE:
 
         def _render_agent_profile(self, profile) -> str:
             roles = ", ".join(profile.get("roles_enabled", [])) or "none"
+            effective_policy = profile.get("effective_ai_policy", {})
+            workspace_policy = profile.get("workspace_ai_policy", {})
             return "\n".join([
                 f"Agent profile: {profile.get('name', 'unnamed')}",
                 f"Model: {profile.get('model', 'unknown')}",
@@ -504,6 +513,8 @@ if TEXTUAL_AVAILABLE:
                 f"Input budget: {profile.get('input_token_budget', 'unknown')}",
                 f"Output budget: {profile.get('output_token_budget', 'unknown')}",
                 f"Failure mode: {profile.get('failure_mode', 'unknown')}",
+                f"AI policy: generation={effective_policy.get('ai_generation', 'off')} repair={effective_policy.get('ai_repair', 'ask')} explain={effective_policy.get('ai_explain', 'ask')}",
+                f"Policy source: {profile.get('ai_policy_source', 'global')} inherit={workspace_policy.get('inherit', True)}",
             ])
 
         def _render_job_list(self, jobs) -> str:
@@ -549,7 +560,7 @@ if TEXTUAL_AVAILABLE:
                 lines.append("")
                 lines.append("Planned:")
                 for item in planned[:8]:
-                    lines.append(f"- {item.get('action', 'plan')}: {item.get('test_path', '')}")
+                    lines.append(f"- {item.get('action', 'plan')}: {item.get('test_path', '')} [{self._ai_label(item)}]")
                 if len(planned) > 8:
                     lines.append(f"- ... {len(planned) - 8} more")
             if run.get("output"):
@@ -563,6 +574,18 @@ if TEXTUAL_AVAILABLE:
             if returncode is None:
                 return "not run"
             return "passed" if returncode == 0 else f"failed ({returncode})"
+
+        @staticmethod
+        def _ai_label(item) -> str:
+            ai_attempted = item.get("ai_attempted")
+            ai_used = item.get("ai_used")
+            if ai_attempted is None or ai_used is None:
+                return "AI unknown"
+            if ai_attempted is True and ai_used is True:
+                return "AI used"
+            if ai_attempted is True and ai_used is False:
+                return "AI fallback"
+            return "AI skipped"
 
         @staticmethod
         def _format_run_id(run_id: str) -> str:

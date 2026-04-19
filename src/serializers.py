@@ -1,6 +1,8 @@
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Iterable, List
 
+from src.application.ai_policy import AiPolicy, WorkspaceAiPolicy
+
 
 MODEL_PRICING_PER_MILLION = {
     "gpt-5.4": {"input": 2.50, "output": 15.00},
@@ -26,12 +28,46 @@ def serialize_workspace_status(status) -> Dict[str, Any]:
     }
 
 
-def serialize_agent_profile(profile) -> Dict[str, Any]:
-    return to_dict(profile)
+def serialize_ai_policy(policy: Any) -> Dict[str, Any]:
+    if isinstance(policy, AiPolicy):
+        return policy.to_dict()
+    if isinstance(policy, WorkspaceAiPolicy):
+        return policy.to_dict()
+    return dict(policy or {})
+
+
+def serialize_agent_profile(
+    profile,
+    effective_ai_policy: Any = None,
+    global_ai_policy: Any = None,
+    workspace_ai_policy: Any = None,
+    ai_policy_source: str = "",
+) -> Dict[str, Any]:
+    payload = to_dict(profile)
+    if effective_ai_policy is not None:
+        payload["effective_ai_policy"] = serialize_ai_policy(effective_ai_policy)
+    if global_ai_policy is not None:
+        payload["global_ai_policy"] = serialize_ai_policy(global_ai_policy)
+    if workspace_ai_policy is not None:
+        payload["workspace_ai_policy"] = serialize_ai_policy(workspace_ai_policy)
+    if ai_policy_source:
+        payload["ai_policy_source"] = ai_policy_source
+    return payload
 
 
 def serialize_job_definition(job) -> Dict[str, Any]:
     return to_dict(job)
+
+
+def with_ai_metadata(item: Any) -> Dict[str, Any]:
+    payload = dict(to_dict(item) or {})
+    if "ai_attempted" not in payload:
+        payload["ai_attempted"] = None
+    if "ai_used" not in payload:
+        payload["ai_used"] = None
+    payload["ai_status"] = payload.get("ai_status") or "unknown"
+    payload["ai_reason"] = payload.get("ai_reason") or ""
+    return payload
 
 
 def summarize_fallback_contexts(contexts: Iterable[dict], model: str = "") -> Dict[str, Any]:
@@ -57,20 +93,27 @@ def summarize_fallback_contexts(contexts: Iterable[dict], model: str = "") -> Di
 
 
 def serialize_job_result(result, model: str = "") -> Dict[str, Any]:
+    contexts = result.llm_fallback_contexts
     return {
         "job_name": result.job_name,
         "mode": result.mode,
         "target_scope": result.target_scope,
-        "planned_files": [to_dict(item) for item in result.planned_files],
-        "written_files": [to_dict(item) for item in result.written_files],
+        "planned_files": [with_ai_metadata(item) for item in result.planned_files],
+        "written_files": [with_ai_metadata(item) for item in result.written_files],
         "run": {
             "output": result.run_output,
             "returncode": result.run_returncode,
             "coverage": result.run_coverage,
         },
         "history_id": result.history_id,
-        "llm_fallback_contexts": result.llm_fallback_contexts,
-        "fallback_context_summary": summarize_fallback_contexts(result.llm_fallback_contexts, model=model),
+        "llm_fallback_contexts": contexts,
+        "fallback_context_summary": summarize_fallback_contexts(contexts, model=model),
+        "failure_categories": getattr(result, "failure_categories", []),
+        "ai_repair_suggestions": getattr(result, "ai_repair_suggestions", []),
+        "ai_repair_requested": getattr(result, "ai_repair_requested", False),
+        "ai_repair_used": getattr(result, "ai_repair_used", False),
+        "ai_repair_status": getattr(result, "ai_repair_status", "skipped"),
+        "ai_repair_reason": getattr(result, "ai_repair_reason", ""),
     }
 
 
@@ -81,8 +124,8 @@ def serialize_run_history_record(run_id: str, payload: Dict[str, Any], model: st
         "job_name": payload.get("job_name", ""),
         "mode": payload.get("mode", ""),
         "target_scope": payload.get("target_scope", ""),
-        "planned_files": payload.get("planned_files", []),
-        "written_files": payload.get("written_files", []),
+        "planned_files": [with_ai_metadata(item) for item in payload.get("planned_files", [])],
+        "written_files": [with_ai_metadata(item) for item in payload.get("written_files", [])],
         "run": {
             "output": payload.get("run_output", ""),
             "returncode": payload.get("run_returncode"),
@@ -90,4 +133,10 @@ def serialize_run_history_record(run_id: str, payload: Dict[str, Any], model: st
         },
         "llm_fallback_contexts": contexts,
         "fallback_context_summary": summarize_fallback_contexts(contexts, model=model),
+        "failure_categories": payload.get("failure_categories", []),
+        "ai_repair_suggestions": payload.get("ai_repair_suggestions", []),
+        "ai_repair_requested": bool(payload.get("ai_repair_requested", False)),
+        "ai_repair_used": bool(payload.get("ai_repair_used", False)),
+        "ai_repair_status": payload.get("ai_repair_status", "skipped"),
+        "ai_repair_reason": payload.get("ai_repair_reason", ""),
     }

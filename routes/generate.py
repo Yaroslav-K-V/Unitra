@@ -5,6 +5,7 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 log = logging.getLogger(__name__)
 
+from src.application.ai_policy import AiPolicy
 from src.application.exceptions import ValidationError
 from src.application.models import SaveSettingsRequest
 from src.container import get_container
@@ -77,14 +78,24 @@ def generate_project():
 
 @generate_bp.route("/settings/save", methods=["POST"])
 def settings_save():
-    result = get_container().settings.save_settings(
-        SaveSettingsRequest(
-            api_key=request.get_json().get("api_key", ""),
-            model=request.get_json().get("model", ""),
-            show_hints=request.get_json().get("show_hints"),
+    body = request.get_json()
+    try:
+        result = get_container().settings.save_settings(
+            SaveSettingsRequest(
+                api_key=body.get("api_key", ""),
+                model=body.get("model", ""),
+                show_hints=body.get("show_hints"),
+                ai_policy=AiPolicy.from_dict(body.get("ai_policy", {})) if "ai_policy" in body else None,
+            )
         )
-    )
-    return jsonify({"ok": result.saved, "model": result.model, "show_hints": result.show_hints})
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({
+        "ok": result.saved,
+        "model": result.model,
+        "show_hints": result.show_hints,
+        "ai_policy": getattr(result, "ai_policy", AiPolicy()).to_dict(),
+    })
 
 
 @generate_bp.route("/generate-ai", methods=["POST"])

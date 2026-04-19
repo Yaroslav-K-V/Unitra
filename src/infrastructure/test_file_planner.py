@@ -35,7 +35,15 @@ class TestFilePlanner:
             )
         return plans
 
-    def build_write_plan(self, planned: PlannedTestFile, generated_content: str) -> WritePlan:
+    def build_write_plan(
+        self,
+        planned: PlannedTestFile,
+        generated_content: str,
+        ai_attempted=None,
+        ai_used=None,
+        ai_status: str = "unknown",
+        ai_reason: str = "",
+    ) -> WritePlan:
         current = ""
         preserved_user_block = ""
         if planned.exists:
@@ -66,6 +74,10 @@ class TestFilePlanner:
             diff=diff,
             managed=planned.managed,
             preserved_user_block=preserved_user_block,
+            ai_attempted=ai_attempted,
+            ai_used=ai_used,
+            ai_status=ai_status,
+            ai_reason=ai_reason,
         )
 
     @staticmethod

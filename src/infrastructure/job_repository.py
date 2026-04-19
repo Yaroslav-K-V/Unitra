@@ -23,6 +23,8 @@ class JobRepository:
                 "coverage": job.coverage,
                 "timeout": job.timeout,
                 "agent_profile": job.agent_profile,
+                "use_ai_generation": job.use_ai_generation,
+                "use_ai_repair": job.use_ai_repair,
             }
         })
         with open(path, "w", encoding="utf-8") as handle:
@@ -44,6 +46,8 @@ class JobRepository:
             coverage=bool(raw.get("coverage", False)),
             timeout=int(raw.get("timeout", 30)),
             agent_profile=raw.get("agent_profile", "default"),
+            use_ai_generation=bool(raw.get("use_ai_generation", False)),
+            use_ai_repair=bool(raw.get("use_ai_repair", False)),
         )
 
     def list_names(self):

@@ -1,8 +1,13 @@
 import os
+import subprocess
+import sys
 
+from src.application.ai_policy import AiPolicy
+from src.application.exceptions import ValidationError
 from src.application.models import RunResult
 from src.application.workspace_models import (
     AgentProfile,
+    FailureAnalysisArtifact,
     TestTarget,
     USER_BLOCK_BEGIN,
     USER_BLOCK_END,
@@ -16,6 +21,7 @@ from src.infrastructure.source_loader import SourceLoader
 from src.infrastructure.test_file_planner import TestFilePlanner
 from src.infrastructure.test_writer import TestWriter
 from src.infrastructure.workspace_repository import WorkspaceRepository
+from src.serializers import serialize_run_history_record
 
 
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", ".tox", "dist", "build", ".mypy_cache", ".pytest_cache"}
@@ -33,10 +39,21 @@ class StubAiRunner:
     def __init__(self, output):
         self.output = output
         self.calls = []
+        self.repair_calls = []
 
     def run(self, source_code):
         self.calls.append(source_code)
         return self.output
+
+    def repair(self, context):
+        self.repair_calls.append(context)
+        return [{
+            "action": "update_test_expectation",
+            "test_name": (context.get("failure_tests") or [""])[0],
+            "reason": "Generated expectation does not match observed behavior.",
+            "details": "Review the assertion before applying.",
+            "confidence": 0.8,
+        }]
 
 
 def _make_workspace(tmp_path):
@@ -59,12 +76,59 @@ def _make_workspace(tmp_path):
     return root, workspace_repo, job_repo, agent_repo
 
 
+def _make_job_service(
+    workspace_repo,
+    job_repo,
+    agent_repo,
+    ai_runner=None,
+    test_runner=None,
+    global_ai_policy=None,
+):
+    source_loader = SourceLoader(SKIP_DIRS)
+    planner = TestFilePlanner()
+    return WorkspaceJobService(
+        workspace_repository=workspace_repo,
+        job_repository=job_repo,
+        agent_repository=agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+        source_loader=source_loader,
+        planner=planner,
+        writer=TestWriter(),
+        orchestrator=AgentOrchestrator(source_loader, planner, ai_runner=ai_runner),
+        test_runner=test_runner or StubTestRunner(),
+        global_ai_policy=global_ai_policy,
+    )
+
+
 def test_workspace_init_and_status(tmp_path):
     root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
     status = WorkspaceService(workspace_repo, job_repo, agent_repo).status()
     assert status.config.root_path == str(root)
     assert "generate-tests" in status.jobs
     assert "default" in status.agent_profiles
+    assert status.config.ai_policy.inherit is True
+
+
+def test_workspace_ai_policy_override_precedence(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    service = WorkspaceService(workspace_repo, job_repo, agent_repo)
+    global_policy = AiPolicy(ai_generation="ask", ai_repair="ask", ai_explain="auto")
+
+    inherited = service.ai_policy_state(global_policy)
+    assert inherited["effective_ai_policy"].ai_generation == "ask"
+    assert inherited["ai_policy_source"] == "global"
+
+    overridden = service.save_ai_policy(
+        global_policy,
+        inherit=False,
+        policy_values={"ai_generation": "off", "ai_repair": "auto", "ai_explain": "off"},
+    )
+
+    assert overridden["effective_ai_policy"].ai_generation == "off"
+    assert overridden["effective_ai_policy"].ai_repair == "auto"
+    assert overridden["effective_ai_policy"].ai_explain == "off"
+    assert overridden["ai_policy_source"] == "workspace"
+    assert workspace_repo.load_config().ai_policy.inherit is False
 
 
 def test_planner_mirrors_source_tree(tmp_path):
@@ -154,10 +218,17 @@ def test_orchestrator_generates_managed_artifact(tmp_path):
         workspace,
         AgentProfile(name="default", model="gpt-5.4-mini"),
         [os.path.join(str(root), "pkg", "math_utils.py")],
+        use_ai_generation=True,
     )
     assert len(artifacts) == 1
     assert "Managed by Unitra" in artifacts[0].generated_code
+    assert "importlib.util.spec_from_file_location" in artifacts[0].generated_code
+    assert "add = _unitra_source.add" in artifacts[0].generated_code
+    assert "divide = _unitra_source.divide" in artifacts[0].generated_code
     assert USER_BLOCK_BEGIN in artifacts[0].generated_code
+    assert artifacts[0].ai_attempted is False
+    assert artifacts[0].ai_used is False
+    assert artifacts[0].ai_status == "skipped"
 
 
 def test_orchestrator_uses_ai_runner_when_available(tmp_path):
@@ -170,12 +241,86 @@ def test_orchestrator_uses_ai_runner_when_available(tmp_path):
         workspace,
         AgentProfile(name="default", model="gpt-5.4-mini"),
         [os.path.join(str(root), "pkg", "math_utils.py")],
+        use_ai_generation=True,
     )
 
     assert len(ai_runner.calls) == 1
     assert "Generated with AI assistance" in artifacts[0].generated_code
     assert "def test_ai_generated" in artifacts[0].generated_code
     assert USER_BLOCK_BEGIN in artifacts[0].generated_code
+    assert artifacts[0].ai_attempted is True
+    assert artifacts[0].ai_used is True
+    assert artifacts[0].ai_status == "used"
+
+
+def test_workspace_written_tests_bind_invalid_source_filename(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "1.py").write_text(
+        "def add(a: int, b: int) -> int:\n"
+        "    return a + b\n",
+        encoding="utf-8",
+    )
+    workspace_repo = WorkspaceRepository(str(root))
+    job_repo = JobRepository(workspace_repo.jobs_dir)
+    agent_repo = AgentProfileRepository(workspace_repo.agents_dir, default_model="gpt-5.4-mini")
+    WorkspaceService(workspace_repo, job_repo, agent_repo).init_workspace(str(root))
+
+    source_loader = SourceLoader(SKIP_DIRS)
+    planner = TestFilePlanner()
+    service = WorkspaceJobService(
+        workspace_repository=workspace_repo,
+        job_repository=job_repo,
+        agent_repository=agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+        source_loader=source_loader,
+        planner=planner,
+        writer=TestWriter(),
+        orchestrator=AgentOrchestrator(source_loader, planner),
+        test_runner=StubTestRunner(),
+    )
+
+    result = service.generate_tests(TestTarget(scope="repo", workspace_root=str(root)), write=True)
+    test_path = result.written_files[0].test_path
+    content = open(test_path, encoding="utf-8").read()
+
+    assert "importlib.util.spec_from_file_location" in content
+    assert "add = _unitra_source.add" in content
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", os.path.relpath(test_path, str(root))],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_source_binding_binds_classes_but_not_methods(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    source = root / "user_module.py"
+    source.write_text(
+        "class User:\n"
+        "    def greet(self):\n"
+        "        return 'hello'\n",
+        encoding="utf-8",
+    )
+    workspace_repo = WorkspaceRepository(str(root))
+    job_repo = JobRepository(workspace_repo.jobs_dir)
+    agent_repo = AgentProfileRepository(workspace_repo.agents_dir, default_model="gpt-5.4-mini")
+    WorkspaceService(workspace_repo, job_repo, agent_repo).init_workspace(str(root))
+    workspace = workspace_repo.load_config()
+
+    artifacts = AgentOrchestrator(SourceLoader(SKIP_DIRS), TestFilePlanner()).orchestrate(
+        workspace,
+        AgentProfile(name="default", model="gpt-5.4-mini"),
+        [str(source)],
+    )
+
+    assert "User = _unitra_source.User" in artifacts[0].generated_code
+    assert "greet = _unitra_source.greet" not in artifacts[0].generated_code
 
 
 def test_orchestrator_falls_back_when_ai_runner_fails(tmp_path):
@@ -191,10 +336,14 @@ def test_orchestrator_falls_back_when_ai_runner_fails(tmp_path):
         workspace,
         AgentProfile(name="default", model="gpt-5.4-mini"),
         [os.path.join(str(root), "pkg", "math_utils.py")],
+        use_ai_generation=True,
     )
 
     assert "def test_add_basic" in artifacts[0].generated_code
     assert "Generated with AI assistance" not in artifacts[0].generated_code
+    assert artifacts[0].ai_attempted is True
+    assert artifacts[0].ai_used is False
+    assert artifacts[0].ai_status == "fallback"
 
 
 def test_job_service_generate_preview_and_fix_failures(tmp_path):
@@ -217,6 +366,9 @@ def test_job_service_generate_preview_and_fix_failures(tmp_path):
     preview = service.generate_tests(TestTarget(scope="repo", workspace_root=str(root)), write=False)
     assert preview.planned_files
     assert all(not item.written for item in preview.written_files)
+    assert preview.planned_files[0].ai_attempted is False
+    assert preview.planned_files[0].ai_used is False
+    assert preview.planned_files[0].ai_status == "skipped"
 
     fixed = service.fix_failed_tests(TestTarget(scope="repo", workspace_root=str(root)), write=True)
     assert fixed.written_files
@@ -230,10 +382,238 @@ def test_job_service_generate_preview_and_fix_failures(tmp_path):
     assert "(0.0, 0.0)" not in divide_chunk
     assert "(1.0, 1.0)" in divide_chunk
     assert fixed.llm_fallback_contexts
+    assert fixed.failure_categories
+    assert fixed.failure_categories[0]["category"] == "runtime_error"
+    assert fixed.ai_repair_status == "skipped"
     context = fixed.llm_fallback_contexts[0]
     assert context["estimated_input_tokens"] <= 4000
     assert "test_divide" in " ".join(context["failure_tests"])
     assert fixed.history_id
+
+
+def test_job_service_requires_explicit_ai_generation_consent(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    source_loader = SourceLoader(SKIP_DIRS)
+    planner = TestFilePlanner()
+    writer = TestWriter()
+    ai_runner = StubAiRunner("def test_ai_generated():\n    assert True\n")
+    service = WorkspaceJobService(
+        workspace_repository=workspace_repo,
+        job_repository=job_repo,
+        agent_repository=agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+        source_loader=source_loader,
+        planner=planner,
+        writer=writer,
+        orchestrator=AgentOrchestrator(source_loader, planner, ai_runner=ai_runner),
+        test_runner=StubTestRunner(),
+        global_ai_policy=AiPolicy(ai_generation="ask"),
+    )
+
+    local = service.generate_tests(TestTarget(scope="repo", workspace_root=str(root)), write=False)
+    assert ai_runner.calls == []
+    assert local.planned_files[0].ai_attempted is False
+
+    ai_preview = service.generate_tests(
+        TestTarget(scope="repo", workspace_root=str(root)),
+        write=False,
+        use_ai_generation=True,
+    )
+    assert len(ai_runner.calls) == 1
+    assert ai_preview.planned_files[0].ai_used is True
+
+
+def test_job_service_blocks_ai_generation_when_policy_is_off(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    source_loader = SourceLoader(SKIP_DIRS)
+    planner = TestFilePlanner()
+    service = WorkspaceJobService(
+        workspace_repository=workspace_repo,
+        job_repository=job_repo,
+        agent_repository=agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+        source_loader=source_loader,
+        planner=planner,
+        writer=TestWriter(),
+        orchestrator=AgentOrchestrator(source_loader, planner, ai_runner=StubAiRunner("def test_x():\n    pass\n")),
+        test_runner=StubTestRunner(),
+        global_ai_policy=AiPolicy(ai_generation="off"),
+    )
+
+    try:
+        service.generate_tests(
+            TestTarget(scope="repo", workspace_root=str(root)),
+            write=False,
+            use_ai_generation=True,
+        )
+    except ValidationError as exc:
+        assert "disabled by policy" in str(exc)
+    else:
+        raise AssertionError("ValidationError was not raised")
+
+
+def test_ai_repair_ask_requires_explicit_request(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    ai_runner = StubAiRunner("def test_ai_generated():\n    assert True\n")
+    service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        ai_runner=ai_runner,
+        global_ai_policy=AiPolicy(ai_repair="ask"),
+    )
+
+    local = service.fix_failed_tests(TestTarget(scope="repo", workspace_root=str(root)), write=True)
+    assert ai_runner.repair_calls == []
+    assert local.ai_repair_status == "skipped"
+
+    repaired = service.fix_failed_tests(
+        TestTarget(scope="repo", workspace_root=str(root)),
+        write=True,
+        use_ai_repair=True,
+    )
+    assert len(ai_runner.repair_calls) == 1
+    assert repaired.ai_repair_used is True
+    assert repaired.ai_repair_suggestions[0]["action"] == "update_test_expectation"
+
+
+def test_ai_repair_off_blocks_explicit_request(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        ai_runner=StubAiRunner("def test_ai_generated():\n    assert True\n"),
+        global_ai_policy=AiPolicy(ai_repair="off"),
+    )
+
+    try:
+        service.fix_failed_tests(
+            TestTarget(scope="repo", workspace_root=str(root)),
+            write=True,
+            use_ai_repair=True,
+        )
+    except ValidationError as exc:
+        assert "AI repair is disabled" in str(exc)
+    else:
+        raise AssertionError("ValidationError was not raised")
+
+
+def test_ai_repair_auto_calls_ai_for_behavior_failures(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    ai_runner = StubAiRunner("def test_ai_generated():\n    assert True\n")
+    service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        ai_runner=ai_runner,
+        global_ai_policy=AiPolicy(ai_repair="auto"),
+    )
+
+    result = service.fix_failed_tests(TestTarget(scope="repo", workspace_root=str(root)), write=True)
+
+    assert len(ai_runner.repair_calls) == 1
+    assert result.ai_repair_requested is False
+    assert result.ai_repair_used is True
+    assert result.ai_repair_status == "used"
+
+
+def test_missing_name_failures_are_classified_local_without_ai_repair(tmp_path):
+    class MissingNameRunner:
+        def run_multiple(self, modules, work_dir):
+            return RunResult(
+                output="FAILED tests/unit/pkg/test_math_utils.py::test_add_basic - NameError: name 'add' is not defined",
+                returncode=1,
+                coverage=None,
+            )
+
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    ai_runner = StubAiRunner("def test_ai_generated():\n    assert True\n")
+    service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        ai_runner=ai_runner,
+        test_runner=MissingNameRunner(),
+        global_ai_policy=AiPolicy(ai_repair="auto"),
+    )
+
+    result = service.fix_failed_tests(TestTarget(scope="repo", workspace_root=str(root)), write=True)
+
+    assert result.failure_categories[0]["category"] == "missing_import_or_name"
+    assert result.llm_fallback_contexts == []
+    assert result.ai_repair_suggestions == []
+    assert ai_runner.repair_calls == []
+
+
+def test_local_failure_fix_updates_wrong_exception_type():
+    content = (
+        "import pytest\n\n"
+        "def test_divide_by_zero_raises():\n"
+        "    with pytest.raises(ZeroDivisionError):\n"
+        "        divide(1.0, 0.0)\n"
+    )
+    failure = FailureAnalysisArtifact(
+        test_path="tests/unit/test_calc.py",
+        failures=["FAILED tests/unit/test_calc.py::test_divide_by_zero_raises - ValueError: Cannot divide by zero"],
+        recommendations=[],
+        failure_tests=["test_divide_by_zero_raises"],
+        run_output="ValueError: Cannot divide by zero",
+    )
+
+    fixed = WorkspaceJobService._apply_failure_fixes(content, failure)
+
+    assert "pytest.raises(ValueError)" in fixed
+    assert "pytest.raises(ZeroDivisionError)" not in fixed
+
+
+def test_local_failure_fix_removes_failed_parametrize_rows():
+    content = (
+        "import pytest\n\n"
+        "@pytest.mark.parametrize(\"a, b, expected\", [\n"
+        "    (0.0, 0.0, 0.0),\n"
+        "    (None, 1.0, pytest.approx(1.0)),\n"
+        "    ('', '', pytest.raises(TypeError)),\n"
+        "])\n"
+        "def test_add_parametrize(a, b, expected):\n"
+        "    result = add(a, b)\n"
+        "    assert result == expected\n"
+    )
+    failure = FailureAnalysisArtifact(
+        test_path="tests/unit/test_calc.py",
+        failures=[
+            "FAILED tests/unit/test_calc.py::test_add_parametrize[None-1.0-expected1] - TypeError: unsupported",
+            "FAILED tests/unit/test_calc.py::test_add_parametrize[--expected2] - AssertionError: assert '' == RaisesExc(TypeError)",
+        ],
+        recommendations=[],
+        failure_tests=["test_add_parametrize", "test_add_parametrize"],
+        run_output="",
+    )
+
+    fixed = WorkspaceJobService._apply_failure_fixes(content, failure)
+
+    assert "(0.0, 0.0, 0.0)" in fixed
+    assert "None, 1.0" not in fixed
+    assert "pytest.raises(TypeError)" not in fixed
+
+
+def test_local_failure_fix_updates_simple_assertion_actual_literal():
+    content = (
+        "def test_hello_world_basic():\n"
+        "    result = hello_world()\n"
+        "    assert result == 'Hello, World!'\n"
+    )
+    failure = FailureAnalysisArtifact(
+        test_path="tests/unit/test_1.py",
+        failures=["FAILED tests/unit/test_1.py::test_hello_world_basic - AssertionError: assert None == 'Hello, World!'"],
+        recommendations=[],
+        failure_tests=["test_hello_world_basic"],
+        run_output="AssertionError: assert None == 'Hello, World!'",
+    )
+
+    fixed = WorkspaceJobService._apply_failure_fixes(content, failure)
+
+    assert "assert result == None" in fixed
 
 
 def test_llm_fallback_context_is_budgeted_to_failing_tests(tmp_path):
@@ -370,3 +750,46 @@ def test_generated_workspace_runs_pass_modules_separately(tmp_path):
     assert len(runner.modules) == 2
     assert "def divide(a: float, b: float) -> float" in runner.modules[0]
     assert "def divide(a: float, b: float) -> float" in runner.modules[1]
+
+
+def test_old_run_history_missing_ai_metadata_serializes_as_unknown():
+    payload = {
+        "job_name": "generate-tests",
+        "mode": "generate-tests",
+        "target_scope": "repo",
+        "planned_files": [
+            {
+                "source_path": "/repo/pkg/math_utils.py",
+                "test_path": "/repo/tests/unit/pkg/test_math_utils.py",
+                "action": "create",
+                "generated_content": "",
+                "diff": "",
+                "managed": False,
+            }
+        ],
+        "written_files": [
+            {
+                "source_path": "/repo/pkg/math_utils.py",
+                "test_path": "/repo/tests/unit/pkg/test_math_utils.py",
+                "action": "create",
+                "written": False,
+                "managed": False,
+            }
+        ],
+        "run_output": "",
+        "run_returncode": None,
+        "run_coverage": None,
+        "llm_fallback_contexts": [],
+    }
+
+    result = serialize_run_history_record("old-run", payload)
+
+    assert result["planned_files"][0]["ai_attempted"] is None
+    assert result["planned_files"][0]["ai_used"] is None
+    assert result["planned_files"][0]["ai_status"] == "unknown"
+    assert result["written_files"][0]["ai_attempted"] is None
+    assert result["written_files"][0]["ai_used"] is None
+    assert result["written_files"][0]["ai_status"] == "unknown"
+    assert result["failure_categories"] == []
+    assert result["ai_repair_suggestions"] == []
+    assert result["ai_repair_status"] == "skipped"
