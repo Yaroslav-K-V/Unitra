@@ -42,6 +42,18 @@ function showToast(msg) {
     t._timer = setTimeout(() => t.classList.remove("toast-show"), 2000);
 }
 
+function setQuickRunState(state) {
+    const workbench = document.querySelector(".quick-workbench");
+    if (workbench) workbench.dataset.runState = state;
+}
+
+function setRunResultClass(resultBox, statusClass = "") {
+    const classes = ["run-result"];
+    if (resultBox.closest(".quick-workbench")) classes.push("quick-run-result");
+    if (statusClass) classes.push(statusClass);
+    resultBox.className = classes.join(" ");
+}
+
 async function copyOutput() {
     const text = document.getElementById("output").textContent;
     if (!text) return;
@@ -118,7 +130,8 @@ function renderRunResult(data) {
     const summary = summarizePytestOutput(output);
 
     clearRunResult(resultBox);
-    resultBox.className = data.returncode === 0 ? "run-result run-pass" : "run-result run-fail";
+    setRunResultClass(resultBox, data.returncode === 0 ? "run-pass" : "run-fail");
+    setQuickRunState(data.returncode === 0 ? "pass" : "fail");
 
     const headlineParts = [];
     headlineParts.push(data.returncode === 0 ? "Tests passed" : "Tests failed");
@@ -148,7 +161,8 @@ async function runTests() {
     btn.textContent = "Running...";
     btn.disabled = true;
     clearRunResult(resultBox);
-    resultBox.className = "run-result";
+    setRunResultClass(resultBox);
+    setQuickRunState("running");
 
     const sourceEl = document.getElementById("code");
     const source_code = (sourceEl ? sourceEl.value : "") || window._sourceCode || "";
@@ -165,20 +179,22 @@ async function runTests() {
         if (data.error) {
             clearRunResult(resultBox);
             appendRunSection(resultBox, "Run error", data.error, "run-log");
-            resultBox.className = "run-result run-error";
+            setRunResultClass(resultBox, "run-error");
+            setQuickRunState("error");
             const copyBtn = document.getElementById("btn-copy-run");
-            if (copyBtn) copyBtn.style.display = "inline-block";
+            if (copyBtn) copyBtn.style.display = "inline-flex";
             return;
         }
 
         renderRunResult(data);
 
         const copyBtn = document.getElementById("btn-copy-run");
-        if (copyBtn) copyBtn.style.display = "inline-block";
+        if (copyBtn) copyBtn.style.display = "inline-flex";
     } catch {
         clearRunResult(resultBox);
         appendRunSection(resultBox, "Run error", "Connection failed — is the app running?", "run-log");
-        resultBox.className = "run-result run-error";
+        setRunResultClass(resultBox, "run-error");
+        setQuickRunState("error");
     } finally {
         btn.disabled = false;
         btn.textContent = "Run Tests";

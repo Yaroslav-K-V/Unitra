@@ -54,7 +54,7 @@ class AppConfig:
 def load_config(root_path: Optional[str] = None) -> AppConfig:
     base_dir = root_path or APP_ROOT
     env_path = os.path.join(base_dir, ".env")
-    settings_path = os.getenv("UNITRA_SETTINGS_PATH") or os.path.join(APP_ROOT, "data", "settings.json")
+    settings_path = os.getenv("UNITRA_SETTINGS_PATH") or os.path.join(base_dir, "data", "settings.json")
     file_values = {
         key: value
         for key, value in dict(dotenv_values(env_path)).items()

@@ -3,82 +3,77 @@
 
 {% block content %}
 <main class="quick-screen">
-    <header class="page-header quick-page-header">
-        <div class="ui-eyebrow">Scratchpad workflow</div>
-        <h1 class="page-title">Quick</h1>
-        <p class="subtitle">Paste a Python snippet, open a file, and generate or run tests without creating a workspace.</p>
-    </header>
-
-    <div class="quick-layout">
-        <section class="quick-input-card quick-editor-panel">
-            <div class="ui-section-header quick-panel-header">
-                <div>
-                    <label class="section-label">Your Python code</label>
-                    <p class="quick-card-subtitle hint-toggle">Quick stays intentionally lightweight. Use Workspace when you want managed repo review, writes, and reruns.</p>
-                </div>
-                <div class="examples-row">
-                    <span class="examples-label">Examples:</span>
-                    <button class="btn-example" onclick="loadExample(0)">Simple function</button>
-                    <button class="btn-example" onclick="loadExample(1)">Class</button>
-                    <button class="btn-example" onclick="loadExample(2)">With exceptions</button>
-                </div>
+    <section class="quick-workbench" data-quick-state="idle" data-run-state="idle">
+        <div class="quick-command-strip">
+            <div class="quick-command-copy">
+                <div class="ui-eyebrow">Quick pipeline</div>
+                <h1>Source to pytest, without a workspace.</h1>
+                <p class="hint-toggle">Paste code, generate a draft, then run it locally when it looks right.</p>
             </div>
-            <textarea id="code" class="quick-editor" placeholder="def add(a, b):&#10;    return a + b"></textarea>
-            <div class="actions quick-actions">
+            <div class="quick-command-actions">
+                <div class="examples-row quick-examples-row">
+                    <span class="examples-label">Examples</span>
+                    <button class="btn-example" onclick="loadExample(0)">Function</button>
+                    <button class="btn-example" onclick="loadExample(1)">Class</button>
+                    <button class="btn-example" onclick="loadExample(2)">Exceptions</button>
+                </div>
                 <button class="btn-primary" onclick="generate()">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M5.25 12.75L9 16.5L18.75 6.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                     Generate Tests
                 </button>
-                <button class="btn-secondary" onclick="openFile()">
-                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    Open .py File
-                </button>
             </div>
-        </section>
+        </div>
 
-        <section class="quick-results-column">
-            <div class="output-main tool-pane-card quick-output-panel">
-                <div class="result-header">
-                    <div class="ui-heading-with-icon">
-                        <div class="ui-icon-chip ui-icon-chip-subtle">
-                            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M7.5 7.5H16.5M7.5 12H16.5M7.5 16.5H12.75M6 19.5H18C19.243 19.5 20.25 18.493 20.25 17.25V6.75C20.25 5.507 19.243 4.5 18 4.5H6C4.757 4.5 3.75 5.507 3.75 6.75V17.25C3.75 18.493 4.757 19.5 6 19.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-                        <label class="section-label">Generated tests</label>
+        <div class="quick-pipeline">
+            <section class="quick-stage quick-stage-source">
+                <div class="quick-stage-header">
+                    <div>
+                        <span class="quick-stage-index">01</span>
+                        <h2>Source</h2>
+                    </div>
+                    <button class="btn-secondary quick-file-btn" onclick="openFile()">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Open .py
+                    </button>
+                </div>
+                <textarea id="code" class="quick-editor" placeholder="def add(a, b):&#10;    return a + b"></textarea>
+            </section>
+
+            <section class="quick-stage quick-stage-draft">
+                <div class="quick-stage-header">
+                    <div>
+                        <span class="quick-stage-index">02</span>
+                        <h2>Draft</h2>
                     </div>
                     <span id="meta" class="meta-badge"></span>
                 </div>
-                <div class="output-actions">
+                <div class="output-actions quick-draft-actions">
                     <button id="btn-copy" class="btn-ghost" onclick="copyOutput()">Copy</button>
                     <button id="btn-save" class="btn-ghost" onclick="saveOutput()">Save as .py</button>
                     <button id="btn-save-conftest" class="btn-ghost" onclick="saveConftest()" style="display:none;">Save conftest.py</button>
-                    <button id="btn-run" class="btn-ghost" onclick="runTests()">Run Tests</button>
                 </div>
-                <div id="output" class="output"></div>
-            </div>
+                <div id="output" class="output quick-output"></div>
+            </section>
+        </div>
 
-            <div class="run-panel tool-pane-card quick-run-panel">
-                <div class="run-panel-header">
-                    <div class="ui-heading-with-icon">
-                        <div class="ui-icon-chip ui-icon-chip-subtle">
-                            <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 6V12L16.5 14.25" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
-                            </svg>
-                        </div>
-                        <span class="section-label">Run result</span>
-                    </div>
-                    <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none;">Copy</button>
+        <section class="quick-verify-band">
+            <div class="quick-stage-header quick-verify-header">
+                <div>
+                    <span class="quick-stage-index">03</span>
+                    <h2>Verify</h2>
                 </div>
-                <pre id="run-result" class="run-result"></pre>
+                <div class="quick-verify-actions">
+                    <button id="btn-run" class="btn-secondary" onclick="runTests()">Run Tests</button>
+                    <button id="btn-copy-run" class="btn-ghost" onclick="copyRunResult()" style="display:none;">Copy run</button>
+                </div>
             </div>
+            <pre id="run-result" class="run-result quick-run-result"></pre>
         </section>
-    </div>
+    </section>
 </main>
 {% endblock %}
 

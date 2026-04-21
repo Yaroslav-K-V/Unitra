@@ -3,6 +3,11 @@ function switchTab(name) {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
 }
 
+function setQuickState(state) {
+    const workbench = document.querySelector(".quick-workbench");
+    if (workbench) workbench.dataset.quickState = state;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const textarea = document.getElementById("code");
 
@@ -61,6 +66,8 @@ async function generate() {
     const btn = document.querySelector(".btn-primary");
     const orig = btn ? btn.textContent.trim() : "";
     if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+    setQuickState("generating");
+    resetQuickRunState();
 
     try {
         let res, data;
@@ -82,6 +89,7 @@ async function generate() {
         if (data.error) {
             output.classList.add("error");
             meta.textContent = "";
+            setQuickState("draft-error");
 
             const match = data.error.match(/line (\d+)/);
             if (match) {
@@ -105,6 +113,7 @@ async function generate() {
         output.textContent = data.test_code;
         meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
+        setQuickState("draft-ready");
         switchTab("output");
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
@@ -117,5 +126,15 @@ function _showError(msg) {
     output.classList.add("error");
     output.textContent = msg;
     if (meta) meta.textContent = "";
+    setQuickState("draft-error");
     switchTab("output");
+}
+
+function resetQuickRunState() {
+    const resultBox = document.getElementById("run-result");
+    if (resultBox && typeof clearRunResult === "function") clearRunResult(resultBox);
+    if (resultBox && typeof setRunResultClass === "function") setRunResultClass(resultBox);
+    if (typeof setQuickRunState === "function") setQuickRunState("idle");
+    const copyBtn = document.getElementById("btn-copy-run");
+    if (copyBtn) copyBtn.style.display = "none";
 }

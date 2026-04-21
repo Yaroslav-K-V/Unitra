@@ -297,6 +297,37 @@ def test_workspace_written_tests_bind_invalid_source_filename(tmp_path):
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
+def test_workspace_run_tests_uses_current_python_module_pytest(tmp_path, monkeypatch):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    service = _make_job_service(workspace_repo, job_repo, agent_repo)
+    captured = {}
+
+    def fake_run(args, capture_output, text, cwd, timeout):
+        captured.update({
+            "args": args,
+            "capture_output": capture_output,
+            "text": text,
+            "cwd": cwd,
+            "timeout": timeout,
+        })
+        return subprocess.CompletedProcess(args, 0, stdout="TOTAL 1 1 100%\n", stderr="")
+
+    import src.application.workspace_services as workspace_services_module
+
+    monkeypatch.setattr(workspace_services_module.subprocess, "run", fake_run)
+
+    result = service.run_tests()
+
+    assert captured["args"][:3] == [sys.executable, "-m", "pytest"]
+    assert captured["args"][3:] == ["-q"]
+    assert captured["cwd"] == str(root)
+    assert captured["capture_output"] is True
+    assert captured["text"] is True
+    assert captured["timeout"] == 30
+    assert result.run_returncode == 0
+    assert result.run_coverage == "100%"
+
+
 def test_source_binding_binds_classes_but_not_methods(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()

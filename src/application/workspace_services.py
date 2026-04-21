@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import replace
 from typing import Any, List, Optional
 
@@ -966,7 +967,7 @@ class WorkspaceJobService:
         return self._test_runner.run_tests(RunTestsRequest(test_code="\n\n".join(modules)))
 
     def _run_workspace_tests(self, workspace: WorkspaceConfig, job: JobDefinition) -> RunResult:
-        args = ["pytest"] + (job.run_pytest_args or workspace.preferred_pytest_args)
+        args = [sys.executable, "-m", "pytest"] + (job.run_pytest_args or workspace.preferred_pytest_args)
         result = subprocess.run(
             args,
             capture_output=True,

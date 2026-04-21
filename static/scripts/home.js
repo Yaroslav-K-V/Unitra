@@ -1,63 +1,41 @@
 const HOME_WORKSPACE_STORAGE_KEY = "workspace_root";
 
 document.addEventListener("DOMContentLoaded", async () => {
-    renderGreeting("greeting");
-    const recentItems = await loadRecent();
-    await loadHomeWorkspaceHints(recentItems);
+    renderGreeting("home-greeting");
+    await loadRecent();
 });
-
-function renderHomeRuns(runs) {
-    const runsBox = document.getElementById("home-runs");
-    if (!runsBox) return;
-
-    if (!runs.length) {
-        runsBox.className = "recent-empty";
-        runsBox.textContent = "No recorded runs yet for the current workspace.";
-        return;
-    }
-
-    runsBox.className = "recent-run-list";
-    runsBox.innerHTML = runs.map(run => {
-        const status = WorkspaceUi.getRunStatus(run.run);
-        const meta = run.run?.coverage
-            ? `Coverage ${run.run.coverage}`
-            : (status.completed ? `Run ${run.history_id}` : "Preview-only result");
-        return `
-            <article class="recent-run-card">
-                <div class="recent-run-topline">
-                    <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.formatRunTimestamp(run.history_id))}</strong>
-                    <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(run.job_name || run.mode || "Run"))}</span>
-                </div>
-                <div class="recent-run-meta">
-                    <span class="recent-run-status ${status.className}">${status.label}</span>
-                    <span>${WorkspaceUi.escapeHtml(meta)}</span>
-                </div>
-            </article>
-        `;
-    }).join("");
-}
 
 async function loadRecent() {
     const result = await WorkspaceUi.fetchJson("/recent");
 
     const list = document.getElementById("recent-list");
     const empty = document.getElementById("recent-empty");
+    const emptyState = document.getElementById("recent-empty-state");
+    const countPill = document.getElementById("recent-count-pill");
     if (!list || !empty) return [];
 
     if (!result.ok) {
         list.innerHTML = "";
-        empty.style.display = "block";
+        if (emptyState) emptyState.style.display = "flex";
         empty.textContent = "Recent workspaces are unavailable right now.";
+        if (countPill) countPill.style.display = "none";
         return [];
     }
 
     const items = Array.isArray(result.payload) ? result.payload : [];
     if (!items.length) {
-        empty.style.display = "block";
+        list.innerHTML = "";
+        if (emptyState) emptyState.style.display = "flex";
         empty.textContent = "No recent workspaces yet.";
+        if (countPill) countPill.style.display = "none";
         return items;
     }
-    empty.style.display = "none";
+
+    if (emptyState) emptyState.style.display = "none";
+    if (countPill) {
+        countPill.textContent = `${items.length} workspace${items.length === 1 ? "" : "s"}`;
+        countPill.style.display = "";
+    }
 
     list.innerHTML = "";
     items.forEach(item => {
@@ -65,12 +43,12 @@ async function loadRecent() {
         const dir = item.path.split(/[\\/]/).slice(-2, -1)[0] || "";
         const isFolder = item.type === "folder";
         const icon = isFolder
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M3 7C3 5.9 3.9 5 5 5H9L11 7H19C20.1 7 21 7.9 21 9V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7Z" stroke="#a89f96" stroke-width="1.8" stroke-linejoin="round"/>
+            ? `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z"/>
                </svg>`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z" stroke="#a89f96" stroke-width="1.8" stroke-linejoin="round"/>
-                <path d="M14 2v6h6" stroke="#a89f96" stroke-width="1.8" stroke-linejoin="round"/>
+            : `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 2.75H6.75C5.645 2.75 4.75 3.645 4.75 4.75V19.25C4.75 20.355 5.645 21.25 6.75 21.25H17.25C18.355 21.25 19.25 20.355 19.25 19.25V8L14 2.75Z"/>
+                <path d="M14 2.75V8H19.25"/>
                </svg>`;
         const badge = isFolder
             ? `<span class="recent-type-badge">folder</span>`
@@ -79,6 +57,7 @@ async function loadRecent() {
         li.className = "recent-item";
         li.dataset.path = item.path;
         li.dataset.type = item.type;
+        li.title = item.path;
         li.innerHTML = `${icon}<span class="recent-name">${WorkspaceUi.escapeHtml(name)}</span><span class="recent-dir">${WorkspaceUi.escapeHtml(dir)}</span>${badge}`;
         li.addEventListener("click", () => {
             if (isFolder) openRecentFolder(item.path);
@@ -90,6 +69,7 @@ async function loadRecent() {
 }
 
 async function openRecentFile(path) {
+    if (!window.pywebview?.api?.open_file_by_path) return;
     const data = await pywebview.api.open_file_by_path(path);
     if (!data) return;
     await WorkspaceUi.fetchJson("/recent/add", {
@@ -106,67 +86,4 @@ function openRecentFolder(path) {
     sessionStorage.setItem("preload_folder", path);
     sessionStorage.setItem(HOME_WORKSPACE_STORAGE_KEY, path);
     window.location.href = "/workspace";
-}
-
-async function loadHomeWorkspaceHints(items = []) {
-    const latestFolder = items.find(item => item.type === "folder");
-    const workspaceRoot = latestFolder?.path || sessionStorage.getItem(HOME_WORKSPACE_STORAGE_KEY);
-    const agentStatus = document.getElementById("home-agent-status");
-
-    if (!workspaceRoot) {
-        if (agentStatus) {
-            agentStatus.textContent = "No workspace opened yet. Open a repo to see the active AI profile and fallback behavior.";
-        }
-        renderHomeRuns([]);
-        return;
-    }
-
-    sessionStorage.setItem(HOME_WORKSPACE_STORAGE_KEY, workspaceRoot);
-
-    const statusResult = await WorkspaceUi.fetchJson(`/workspace/status?root=${encodeURIComponent(workspaceRoot)}`);
-    if (!statusResult.ok) {
-        if (agentStatus) {
-            agentStatus.textContent = "Workspace details are unavailable right now.";
-        }
-        renderHomeRuns([]);
-        return;
-    }
-
-    const profileResult = await WorkspaceUi.fetchJson(`/workspace/agent-profile?root=${encodeURIComponent(workspaceRoot)}`);
-    const runsResult = await WorkspaceUi.fetchJson(`/workspace/runs?root=${encodeURIComponent(workspaceRoot)}&limit=3`);
-
-    if (agentStatus) {
-        if (!profileResult.ok) {
-            agentStatus.textContent = `Workspace ready at ${statusResult.payload.config.root_path}.`;
-        } else {
-            const profile = profileResult.payload;
-            const fallbackMode = profile.failure_mode === "report"
-                ? "AI is kept as a fallback for harder fixes."
-                : `Failure mode: ${profile.failure_mode}.`;
-            agentStatus.innerHTML = `
-                <div class="home-ai-profile-head">
-                    <strong>${WorkspaceUi.escapeHtml(profile.name)}</strong>
-                    <span>${WorkspaceUi.escapeHtml(profile.model)}</span>
-                </div>
-                <div class="home-ai-profile-copy">${WorkspaceUi.escapeHtml(fallbackMode)}</div>
-                <details class="home-ai-profile-details">
-                    <summary>Show token budget</summary>
-                    <div>Input budget: ~${WorkspaceUi.escapeHtml(profile.input_token_budget)} tokens</div>
-                    <div>Output budget: ~${WorkspaceUi.escapeHtml(profile.output_token_budget)} tokens</div>
-                </details>
-            `;
-        }
-    }
-
-    if (!runsResult.ok) {
-        renderHomeRuns([]);
-        const runsBox = document.getElementById("home-runs");
-        if (runsBox) {
-            runsBox.className = "recent-empty";
-            runsBox.textContent = "Recent run history is unavailable right now.";
-        }
-        return;
-    }
-
-    renderHomeRuns(Array.isArray(runsResult.payload) ? runsResult.payload : []);
 }

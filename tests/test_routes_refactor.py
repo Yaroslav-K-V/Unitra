@@ -374,16 +374,33 @@ def test_ai_redirects_to_workspace():
     assert response.headers["Location"].endswith("/workspace")
 
 
-def test_home_page_exposes_workspace_contract_targets():
+def test_home_page_exposes_command_center_targets():
     client = _build_app().test_client()
     response = client.get("/")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert 'class="home-command-grid"' in html
+    assert 'href="/quick"' in html
+    assert 'href="/workspace"' in html
+    assert 'id="home-greeting"' in html
     assert 'id="recent-list"' in html
-    assert 'id="home-agent-status"' in html
-    assert 'id="home-runs"' in html
     assert "/static/scripts/workspace-shared.js" in html
+
+
+def test_quick_page_exposes_pipeline_workbench_targets():
+    client = _build_app().test_client()
+    response = client.get("/quick")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'class="quick-workbench"' in html
+    assert 'data-quick-state="idle"' in html
+    assert 'id="code"' in html
+    assert 'id="output"' in html
+    assert 'id="run-result"' in html
+    assert 'id="btn-run"' in html
+    assert "/static/main.js" in html
 
 
 def test_workspace_page_exposes_feedback_and_workspace_panels():

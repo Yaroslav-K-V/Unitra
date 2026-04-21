@@ -7,102 +7,132 @@
 
 {% block content %}
 <main class="home-screen">
-    <section class="home-hero-surface">
-        <div class="ui-eyebrow">Workspace-first Python testing</div>
-        <div class="home-hero-topline">
-            <div class="logo">
+    <section class="home-intro">
+        <div class="home-brand-row">
+            <a href="/" class="logo home-logo">
                 <span class="brand-mark brand-mark-lg" aria-hidden="true">
                     <span class="brand-mark-glow"></span>
-                    <img src="/static/favicon/favicon.svg" width="36" height="36" alt="Unitra">
+                    <img src="/static/favicon/favicon.svg" width="40" height="40" alt="Unitra">
                 </span>
                 <span class="logo-text">Unitra</span>
+                <span class="meta-badge">v0.3 · local</span>
                 <span class="brand-bubble" data-bubble-context="hero" role="presentation"></span>
+            </a>
+        </div>
+
+        <div class="home-intro-grid">
+            <div>
+                <div class="ui-eyebrow">Local Python test cockpit</div>
+                <h1 class="home-title">Start with code. Stay close to the tests.</h1>
+                <p class="home-copy"><span id="home-greeting">Welcome back</span>. Choose the fast scratchpad for one file, or open a repo when you need preview, write, run, and repair in one calmer loop.</p>
+            </div>
+
+            <div class="home-code-rail" aria-label="Example local test flow">
+                <div class="home-code-rail-top">
+                    <span>src/calculator.py</span>
+                    <span>pytest draft</span>
+                </div>
+                <pre><code>def add(a, b):
+    return a + b</code></pre>
+                <div class="home-code-arrow" aria-hidden="true">↓</div>
+                <pre><code>def test_add():
+    assert add(1, 2) == 3</code></pre>
             </div>
         </div>
-        <h1 class="home-hero-title">A calmer desktop tool for quick Python test drafts and serious repository workflows.</h1>
-        <p class="home-hero-copy"><span id="greeting"></span> — open a repo when you want managed review-and-run workflows, or stay in Quick when you only need a one-off draft.</p>
+    </section>
 
-        <div class="home-hero-actions">
-            <a href="/workspace" class="home-cta home-cta-primary">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+    <section class="home-command-grid" aria-label="Choose a workflow">
+        <article class="home-entry-card home-entry-primary">
+            <div class="home-entry-kicker">
+                <span class="home-mode-pill">Quick</span>
+                <span>Snippet · single file · draft now</span>
+            </div>
+            <h2>Paste code and get a pytest draft.</h2>
+            <p>Best when you need a quick local test module without setting up a workspace.</p>
+            <div class="home-entry-details">
+                <span>Paste or open <code>.py</code></span>
+                <span>Generate tests</span>
+                <span>Copy, save, or run</span>
+            </div>
+            <a href="/quick" class="home-cta home-cta-primary">
+                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z"/>
+                </svg>
+                Open Quick
+            </a>
+        </article>
+
+        <article class="home-entry-card">
+            <div class="home-entry-kicker">
+                <span class="home-mode-pill">Workspace</span>
+                <span>Repo · preview · review loop</span>
+            </div>
+            <h2>Open a repository and keep changes managed.</h2>
+            <p>Best when file paths, previews, reruns, and failure repair need to stay together.</p>
+            <div class="home-entry-details">
+                <span>Pick target scope</span>
+                <span>Preview managed writes</span>
+                <span>Run and repair</span>
+            </div>
+            <a href="/workspace" class="home-cta home-cta-secondary">
+                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z"/>
                 </svg>
                 Open Workspace
             </a>
-            <a href="/quick" class="home-cta home-cta-secondary">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M13 2L4 14H11L10 22L20 10H13L13 2Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Quick Start
-            </a>
-            <a href="/info" class="home-cta home-cta-secondary">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 8.25H12.008V8.258H12V8.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M11.25 11.25H12V15.75H12.75" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="currentColor" stroke-width="1.75"/>
-                </svg>
-                Info
-            </a>
-        </div>
-
-        <div class="home-launch-note hint-toggle">
-            <span><strong>Quick</strong> is for one-off code and single-file experiments.</span>
-            <span><strong>Workspace</strong> is for managed repo review, test writes, reruns, and failure repair.</span>
-        </div>
+        </article>
     </section>
 
-    <section class="home-secondary-grid">
-        <article id="recent-section" class="workspace-card home-secondary-panel">
-            <div class="workspace-card-header">
-                <div class="ui-heading-with-icon">
-                    <div class="ui-icon-chip">
-                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h3>Recent workspaces</h3>
-                        <p class="home-panel-copy">Jump back into repository work without reopening paths manually.</p>
-                    </div>
+    <section class="home-lower-grid">
+        <article class="home-process-panel">
+            <div class="home-panel-header">
+                <div>
+                    <div class="ui-eyebrow">Workflow</div>
+                    <h2>One loop, three surfaces.</h2>
                 </div>
+            </div>
+            <div class="home-process-list">
+                <div class="home-process-step">
+                    <span>01</span>
+                    <strong>Bring code</strong>
+                    <p>Paste a snippet, open a file, or select a repository folder.</p>
+                </div>
+                <div class="home-process-step">
+                    <span>02</span>
+                    <strong>Review output</strong>
+                    <p>Read the generated tests or preview managed workspace changes first.</p>
+                </div>
+                <div class="home-process-step">
+                    <span>03</span>
+                    <strong>Run locally</strong>
+                    <p>Execute pytest on your machine and keep the result in the same flow.</p>
+                </div>
+            </div>
+        </article>
+
+        <article id="recent-section" class="home-recent-panel">
+            <div class="home-panel-header">
+                <div>
+                    <div class="ui-eyebrow">Recent</div>
+                    <h2>Recent workspaces</h2>
+                </div>
+                <span class="workspace-pill" id="recent-count-pill" style="display:none">0 workspaces</span>
             </div>
             <ul id="recent-list" class="recent-list"></ul>
-            <p id="recent-empty" class="recent-empty">No recent workspaces yet.</p>
-        </article>
-
-        <article class="workspace-card home-secondary-panel">
-            <div class="workspace-card-header">
-                <div class="ui-heading-with-icon">
-                    <div class="ui-icon-chip">
-                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M9.75 3.75V5.25M14.25 3.75V5.25M9 14.25H15M8.25 9.75H15.75M7.5 20.25H16.5C18.157 20.25 19.5 18.907 19.5 17.25V8.25C19.5 6.593 18.157 5.25 16.5 5.25H7.5C5.843 5.25 4.5 6.593 4.5 8.25V17.25C4.5 18.907 5.843 20.25 7.5 20.25Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h3>Current workspace AI profile</h3>
-                        <p class="home-panel-copy">A quiet snapshot of fallback model and repair policy for your current repo.</p>
-                    </div>
-                </div>
-            </div>
-            <div id="home-agent-status" class="home-ai-status">Loading current workspace AI profile…</div>
-        </article>
-    </section>
-
-    <section class="workspace-card home-runs-panel">
-        <div class="workspace-card-header">
-            <div class="ui-heading-with-icon">
-                <div class="ui-icon-chip">
-                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M8.25 8.25L12 12L15.75 8.25M6 18.75H18C19.243 18.75 20.25 17.743 20.25 16.5V7.5C20.25 6.257 19.243 5.25 18 5.25H6C4.757 5.25 3.75 6.257 3.75 7.5V16.5C3.75 17.743 4.757 18.75 6 18.75Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            <div id="recent-empty-state" class="recent-empty-state">
+                <span class="recent-empty-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M3.75 7.5C3.75 6.257 4.757 5.25 6 5.25H9L11.25 7.5H18C19.243 7.5 20.25 8.507 20.25 9.75V17.25C20.25 18.493 19.243 19.5 18 19.5H6C4.757 19.5 3.75 18.493 3.75 17.25V7.5Z"/>
+                        <path d="M8.25 13.5H12.25"/>
+                        <path d="M15 14L16.25 15.25L18 12.75"/>
                     </svg>
-                </div>
-                <div>
-                    <h3>Recent runs</h3>
-                    <p class="home-panel-copy">A quick view of the latest recorded workspace test activity.</p>
+                </span>
+                <div class="recent-empty-copy">
+                    <p id="recent-empty" class="recent-empty">No recent workspaces yet.</p>
+                    <a href="/workspace">Open a workspace to pin it here.</a>
                 </div>
             </div>
-        </div>
-        <div id="home-runs" class="recent-empty">Open a workspace to populate run history.</div>
+        </article>
     </section>
 </main>
 {% endblock %}
