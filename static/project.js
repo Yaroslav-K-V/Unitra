@@ -3,6 +3,7 @@ const WORKSPACE_STORAGE_KEYS = {
     root: "workspace_root",
     scope: "workspace_scope",
     tab: "workspace_active_tab",
+    guided: "workspace_guided_history_id",
 };
 
 window._workspaceUiCache = window._workspaceUiCache || {
@@ -11,8 +12,11 @@ window._workspaceUiCache = window._workspaceUiCache || {
     runs: new Map(),
 };
 window._workspaceRunIndex = window._workspaceRunIndex || new Map();
+window._workspaceGuidedRunIndex = window._workspaceGuidedRunIndex || new Map();
 window._workspaceLastRequest = window._workspaceLastRequest || null;
 window._workspaceAgentProfile = window._workspaceAgentProfile || null;
+window._workspaceActiveGuidedRun = window._workspaceActiveGuidedRun || null;
+window._workspaceBackend = window._workspaceBackend || null;
 
 function switchWorkspaceTab(name) {
     document.querySelectorAll(".workspace-tab").forEach(panel => {
@@ -74,6 +78,15 @@ function rememberWorkspaceRoot(root) {
     sessionStorage.setItem(WORKSPACE_STORAGE_KEYS.root, root);
 }
 
+function rememberActiveGuidedRun(historyId) {
+    window._workspaceActiveGuidedRun = historyId || null;
+    if (historyId) {
+        sessionStorage.setItem(WORKSPACE_STORAGE_KEYS.guided, historyId);
+    } else {
+        sessionStorage.removeItem(WORKSPACE_STORAGE_KEYS.guided);
+    }
+}
+
 function workspaceCacheGet(kind, key) {
     const store = window._workspaceUiCache[kind];
     const entry = store?.get(key);
@@ -117,11 +130,13 @@ function shouldPromptForAiGeneration(action) {
 function confirmAiGeneration(action, write) {
     if (!shouldPromptForAiGeneration(action)) return false;
     const profile = window._workspaceAgentProfile || {};
-    const model = profile.model || "configured model";
+    const backend = window._workspaceBackend || {};
+    const model = profile.model || backend.model || "configured model";
+    const provider = backend.provider || "configured backend";
     const scope = currentWorkspaceScope();
     const actionLabel = write ? "write managed tests" : "preview managed changes";
     return window.confirm(
-        `Use AI for this ${actionLabel} run?\n\nUnitra will send the selected ${scope} source context to ${model}. Choose Cancel to continue locally.`
+        `Use AI for this ${actionLabel} run?\n\nUnitra will send the selected ${scope} source context to ${provider} (${model}). Choose Cancel to continue locally.`
     );
 }
 
@@ -132,10 +147,12 @@ function canAskForAiRepair() {
 function confirmAiRepair() {
     if (!canAskForAiRepair()) return false;
     const profile = window._workspaceAgentProfile || {};
-    const model = profile.model || "configured model";
+    const backend = window._workspaceBackend || {};
+    const model = profile.model || backend.model || "configured model";
+    const provider = backend.provider || "configured backend";
     const scope = currentWorkspaceScope();
     return window.confirm(
-        `Ask AI for repair suggestions?\n\nUnitra will send focused failure context for the selected ${scope} scope to ${model}.`
+        `Ask AI for repair suggestions?\n\nUnitra will send focused failure context for the selected ${scope} scope to ${provider} (${model}).`
     );
 }
 
@@ -354,6 +371,14 @@ function retryWorkspaceLastRequest() {
     }
     if (request.type === "job") {
         runWorkspaceJob(request.name);
+        return;
+    }
+    if (request.type === "guided-create") {
+        createGuidedRun(request.workflowSource, request.workflowName);
+        return;
+    }
+    if (request.type === "guided-step") {
+        applyGuidedStep(request.action, request.historyId, request.stepId, null, request.options || {});
     }
 }
 
@@ -427,6 +452,8 @@ function renderWorkspaceStatus(status) {
     const rootPill = document.getElementById("workspace-root-pill");
     if (!statusCard) return;
 
+    window._workspaceBackend = status.config.ai_backend || null;
+    const backend = status.config.ai_backend || {};
     const jobs = (status.jobs || []).join(", ") || "none";
     const profiles = (status.agent_profiles || []).join(", ") || "none";
     const runs = (status.recent_runs || []).length;
@@ -453,6 +480,14 @@ function renderWorkspaceStatus(status) {
                 <span class="workspace-stat-label">Recent runs</span>
                 <strong>${runs}</strong>
             </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">AI backend</span>
+                <strong>${WorkspaceUi.escapeHtml(`${backend.provider || "ollama"} · ${backend.model || "llama3.2"}`)}</strong>
+            </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">Backend URL</span>
+                <strong class="workspace-mono-text">${WorkspaceUi.escapeHtml(backend.base_url || "http://localhost:11434/v1/")}</strong>
+            </div>
         </div>
         <div class="workspace-status-footer">
             <span class="workspace-pill workspace-pill-muted">${WorkspaceUi.escapeHtml(jobs)}</span>
@@ -464,11 +499,14 @@ function renderWorkspaceStatus(status) {
 
 function renderWorkspaceJobs(jobs) {
     const container = document.getElementById("workspace-jobs");
+    const builder = document.getElementById("workspace-guided-builder");
     if (!container) return;
+    renderWorkspaceGuidedBuilder(jobs || []);
     if (!jobs.length) {
         container.className = "workspace-list-empty workspace-panel-state";
         container.textContent = "No saved jobs yet.";
         container.dataset.state = "idle";
+        if (builder) builder.dataset.state = "idle";
         return;
     }
     container.className = "workspace-job-list";
@@ -489,6 +527,48 @@ function renderWorkspaceJobs(jobs) {
     markPanelSuccess("workspace-jobs");
 }
 
+function renderWorkspaceGuidedBuilder(jobs) {
+    const container = document.getElementById("workspace-guided-builder");
+    if (!container) return;
+    const safeJobs = jobs || [];
+    container.className = "workspace-review-stack";
+    container.innerHTML = `
+        <section class="workspace-review-block">
+            <div class="workspace-review-block-header">
+                <strong>Recommended guided path</strong>
+                <span class="workspace-chip workspace-chip-subtle">Core flow</span>
+            </div>
+            <div class="workspace-list-meta">Preview managed changes automatically, then approve write, run, and repair one step at a time.</div>
+            <div class="workspace-item-actions">
+                <button class="btn-ghost" data-workspace-action type="button" onclick="createGuidedRun('core', 'core_repo_flow', this)">Start guided flow</button>
+            </div>
+        </section>
+        <section class="workspace-review-block">
+            <div class="workspace-review-block-header">
+                <strong>Saved jobs</strong>
+                <span class="workspace-chip">${safeJobs.length}</span>
+            </div>
+            <div class="workspace-review-file-list">
+                ${safeJobs.length ? safeJobs.map(job => `
+                    <article class="workspace-review-file-card">
+                        <div class="workspace-review-file-meta">
+                            <div>
+                                <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(job))}</strong>
+                                <div class="workspace-list-meta">Create a guided plan from this saved workflow.</div>
+                            </div>
+                            <div class="workspace-item-actions">
+                                <button class="btn-ghost" data-workspace-action type="button" onclick='createGuidedRun("job", ${JSON.stringify(job)}, this)'>Guide job</button>
+                                <button class="btn-ghost" data-workspace-action type="button" onclick='runWorkspaceJob(${JSON.stringify(job)}, this)'>Run now</button>
+                            </div>
+                        </div>
+                    </article>
+                `).join("") : '<div class="workspace-list-meta">No saved jobs available yet.</div>'}
+            </div>
+        </section>
+    `;
+    markPanelSuccess("workspace-guided-builder");
+}
+
 function renderWorkspaceRuns(runs) {
     const container = document.getElementById("workspace-runs");
     if (!container) return;
@@ -500,17 +580,25 @@ function renderWorkspaceRuns(runs) {
     }
     container.className = "workspace-run-list";
     container.innerHTML = runs.map(run => {
-        const status = WorkspaceUi.getRunStatus(run.run);
-        const meta = run.run?.coverage
-            ? `Coverage ${run.run.coverage}`
-            : (status.completed ? `Run ${run.history_id}` : "Preview-only result");
+        const isGuided = run.kind === "guided_run";
+        const status = isGuided
+            ? {
+                label: WorkspaceUi.titleize((run.status || "guided").replaceAll("_", " ")),
+                className: run.status === "completed" ? "workspace-chip-ai-used" : "workspace-chip-subtle",
+            }
+            : WorkspaceUi.getRunStatus(run.run);
+        const meta = isGuided
+            ? (run.next_recommendation || "Guided workflow")
+            : (run.run?.coverage
+                ? `Coverage ${run.run.coverage}`
+                : (status.completed ? `Run ${run.history_id}` : "Preview-only result"));
         const historyId = JSON.stringify(run.history_id);
         return `
             <div class="workspace-list-item">
                 <div>
                     <div class="workspace-list-topline">
                         <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.formatRunTimestamp(run.history_id))}</strong>
-                        <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(run.job_name || run.mode || "Run"))}</span>
+                        <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(isGuided ? (run.workflow_name || "guided run") : (run.job_name || run.mode || "Run")))}</span>
                     </div>
                     <div class="workspace-list-meta">
                         <span class="workspace-run-status ${status.className}">${status.label}</span>
@@ -519,8 +607,9 @@ function renderWorkspaceRuns(runs) {
                 </div>
                 <div class="workspace-item-actions">
                     <button class="btn-ghost" type="button" onclick='openWorkspaceRun(${historyId})'>Open run</button>
-                    ${status.failed ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this)">Fix failures</button>' : ""}
-                    ${status.failed && canAskForAiRepair() ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this, { use_ai_repair: true })">Repair with AI</button>' : ""}
+                    ${isGuided ? '<button class="btn-ghost" type="button" onclick=\'resumeGuidedRun(' + historyId + ')\'>Resume</button>' : ""}
+                    ${!isGuided && status.failed ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this)">Fix failures</button>' : ""}
+                    ${!isGuided && status.failed && canAskForAiRepair() ? '<button class="btn-ghost" data-workspace-action type="button" onclick="runWorkspaceAction(\'fix-failures\', true, this, { use_ai_repair: true })">Repair with AI</button>' : ""}
                 </div>
             </div>
         `;
@@ -538,6 +627,7 @@ function renderWorkspaceAgentProfile(profile) {
     const workspacePolicy = profile.workspace_ai_policy || { inherit: true, ...defaultAiPolicy() };
     const policySource = profile.ai_policy_source || "global";
     const inherited = workspacePolicy.inherit !== false;
+    const backend = window._workspaceBackend || {};
     container.className = "workspace-agent-card";
     container.innerHTML = `
         <div class="workspace-stat-grid">
@@ -560,6 +650,14 @@ function renderWorkspaceAgentProfile(profile) {
             <div class="workspace-stat-card">
                 <span class="workspace-stat-label">AI policy</span>
                 <strong>${WorkspaceUi.escapeHtml(policySource)}</strong>
+            </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">Backend provider</span>
+                <strong>${WorkspaceUi.escapeHtml(backend.provider || "ollama")}</strong>
+            </div>
+            <div class="workspace-stat-card">
+                <span class="workspace-stat-label">Backend URL</span>
+                <strong class="workspace-mono-text">${WorkspaceUi.escapeHtml(backend.base_url || "http://localhost:11434/v1/")}</strong>
             </div>
         </div>
         <div class="workspace-status-footer">
@@ -639,11 +737,49 @@ async function saveWorkspaceAiPolicy(button = null) {
 
 function indexWorkspaceRuns(runs) {
     window._workspaceRunIndex = new Map();
+    window._workspaceGuidedRunIndex = new Map();
     (runs || []).forEach(run => {
         if (run?.history_id) {
             window._workspaceRunIndex.set(run.history_id, run);
+            if (run.kind === "guided_run") {
+                window._workspaceGuidedRunIndex.set(run.history_id, run);
+            }
         }
     });
+    const activeId = sessionStorage.getItem(WORKSPACE_STORAGE_KEYS.guided);
+    if (activeId && window._workspaceGuidedRunIndex.has(activeId)) {
+        rememberActiveGuidedRun(activeId);
+        renderActiveGuidedRunSummary(window._workspaceGuidedRunIndex.get(activeId));
+    } else {
+        renderActiveGuidedRunSummary(null);
+    }
+}
+
+function renderActiveGuidedRunSummary(run) {
+    const container = document.getElementById("workspace-guided-current");
+    if (!container) return;
+    if (!run || run.kind !== "guided_run") {
+        container.className = "workspace-list-empty workspace-panel-state";
+        container.textContent = "No active guided run yet.";
+        container.dataset.state = "idle";
+        return;
+    }
+    const guided = normalizeGuidedResult(run);
+    container.className = "workspace-review-stack";
+    container.innerHTML = `
+        <section class="workspace-review-block">
+            <div class="workspace-review-block-header">
+                <strong>Active guided run</strong>
+                <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(guided.status.replaceAll("_", " ")))}</span>
+            </div>
+            <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(guided.next_recommendation)}</div>
+            <div class="workspace-item-actions">
+                <button class="btn-ghost" type="button" onclick='openWorkspaceRun(${JSON.stringify(guided.history_id)})'>Open timeline</button>
+                ${guided.awaiting_step_id ? `<button class="btn-ghost" type="button" onclick='resumeGuidedRun(${JSON.stringify(guided.history_id)})'>Resume approvals</button>` : ""}
+            </div>
+        </section>
+    `;
+    markPanelSuccess("workspace-guided-current");
 }
 
 function normalizeWorkspaceResult(result) {
@@ -674,6 +810,22 @@ function normalizeWorkspaceResult(result) {
     return normalized;
 }
 
+function normalizeGuidedResult(result) {
+    const normalized = { ...(result || {}) };
+    normalized.kind = "guided_run";
+    normalized.steps = normalized.steps || [];
+    normalized.timeline = normalized.timeline || [];
+    normalized.child_run_ids = normalized.child_run_ids || [];
+    normalized.awaiting_step_id = normalized.awaiting_step_id || "";
+    normalized.current_step_id = normalized.current_step_id || "";
+    normalized.latest_child_run_id = normalized.latest_child_run_id || "";
+    normalized.next_recommendation = normalized.next_recommendation || "Continue the guided workflow.";
+    if (normalized.latest_child_run?.kind === "job_run") {
+        normalized.latest_child_run = normalizeWorkspaceResult(normalized.latest_child_run);
+    }
+    return normalized;
+}
+
 function renderWorkspaceOutputIdle() {
     const output = document.getElementById("output");
     const badge = document.getElementById("badge");
@@ -700,6 +852,10 @@ function renderRunPanelIdle(message = "") {
 }
 
 function renderWorkspaceOutput(result) {
+    if (result?.kind === "guided_run") {
+        renderGuidedWorkspaceOutput(result);
+        return;
+    }
     const output = document.getElementById("output");
     const badge = document.getElementById("badge");
     if (!output || !badge) return;
@@ -919,10 +1075,148 @@ function renderWorkspaceOutput(result) {
     badge.textContent = `${planned.length} planned`;
 }
 
+function renderGuidedWorkspaceOutput(result) {
+    const output = document.getElementById("output");
+    const badge = document.getElementById("badge");
+    if (!output || !badge) return;
+    const guided = normalizeGuidedResult(result);
+    rememberActiveGuidedRun(guided.history_id);
+    window._workspaceGuidedRunIndex.set(guided.history_id, guided);
+    renderActiveGuidedRunSummary(guided);
+
+    output.classList.remove("error");
+    output.innerHTML = `
+        <div class="workspace-review-stack">
+            <section class="workspace-review-block">
+                <div class="workspace-review-block-header">
+                    <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(guided.workflow_name.replaceAll("_", " ")))}</strong>
+                    <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(guided.status.replaceAll("_", " ")))}</span>
+                </div>
+                <div class="workspace-review-summary-grid">
+                    <div class="workspace-stat-card">
+                        <span class="workspace-stat-label">Source</span>
+                        <strong>${WorkspaceUi.escapeHtml(guided.workflow_source)}</strong>
+                    </div>
+                    <div class="workspace-stat-card">
+                        <span class="workspace-stat-label">Target</span>
+                        <strong>${WorkspaceUi.escapeHtml(WorkspaceUi.titleize(guided.target_scope || "repo"))}</strong>
+                    </div>
+                    <div class="workspace-stat-card">
+                        <span class="workspace-stat-label">Awaiting</span>
+                        <strong>${WorkspaceUi.escapeHtml(guided.awaiting_step_id || "none")}</strong>
+                    </div>
+                    <div class="workspace-stat-card">
+                        <span class="workspace-stat-label">Child runs</span>
+                        <strong>${guided.child_run_ids.length}</strong>
+                    </div>
+                </div>
+                <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(guided.next_recommendation)}</div>
+                <div class="workspace-list-meta workspace-mono-text">${WorkspaceUi.escapeHtml(guided.history_id)}</div>
+            </section>
+            <section class="workspace-review-block">
+                <div class="workspace-review-block-header">
+                    <strong>Plan steps</strong>
+                    <span class="workspace-chip">${guided.steps.length}</span>
+                </div>
+                <div class="workspace-review-file-list">
+                    ${guided.steps.map(step => renderGuidedStepCard(guided, step)).join("")}
+                </div>
+            </section>
+            <section class="workspace-review-block">
+                <div class="workspace-review-block-header">
+                    <strong>Timeline</strong>
+                    <span class="workspace-chip">${guided.timeline.length}</span>
+                </div>
+                <div class="workspace-review-file-list">
+                    ${guided.timeline.map(event => `
+                        <article class="workspace-review-file-card">
+                            <div class="workspace-review-file-meta">
+                                <div>
+                                    <strong>${WorkspaceUi.escapeHtml(event.label || event.stage)}</strong>
+                                    <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(event.at || "")}</div>
+                                </div>
+                                <div class="workspace-review-chip-group">
+                                    <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(event.status || "unknown")}</span>
+                                    ${event.step_id ? `<span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(event.step_id)}</span>` : ""}
+                                </div>
+                            </div>
+                            ${event.detail ? `<div class="workspace-list-meta">${WorkspaceUi.escapeHtml(event.detail)}</div>` : ""}
+                            ${event.child_run_id ? `<div class="workspace-item-actions"><button class="btn-ghost" type="button" onclick='openWorkspaceRun(${JSON.stringify(event.child_run_id)})'>Open child run</button></div>` : ""}
+                        </article>
+                    `).join("")}
+                </div>
+            </section>
+        </div>
+    `;
+    badge.textContent = `Guided: ${guided.status}`;
+}
+
+function renderGuidedStepCard(guided, step) {
+    const actionButtons = [];
+    const awaiting = guided.awaiting_step_id === step.id || step.status === "awaiting_approval";
+    if (awaiting) {
+        actionButtons.push(
+            `<button class="btn-ghost" data-workspace-action type="button" onclick='applyGuidedStep("approve", ${JSON.stringify(guided.history_id)}, ${JSON.stringify(step.id)}, this)'>Approve</button>`
+        );
+        if ((step.kind === "write_tests" || step.kind === "preview_changes") && shouldPromptForAiGeneration("generate")) {
+            actionButtons.push(
+                `<button class="btn-ghost" data-workspace-action type="button" onclick='applyGuidedStep("approve", ${JSON.stringify(guided.history_id)}, ${JSON.stringify(step.id)}, this, { confirm_ai_generation: true })'>Approve with AI</button>`
+            );
+        }
+        if (step.kind === "repair_failures" && canAskForAiRepair()) {
+            actionButtons.push(
+                `<button class="btn-ghost" data-workspace-action type="button" onclick='applyGuidedStep("approve", ${JSON.stringify(guided.history_id)}, ${JSON.stringify(step.id)}, this, { confirm_ai_repair: true })'>Approve with AI repair</button>`
+            );
+        }
+        if (step.skippable) {
+            actionButtons.push(
+                `<button class="btn-ghost" data-workspace-action type="button" onclick='applyGuidedStep("skip", ${JSON.stringify(guided.history_id)}, ${JSON.stringify(step.id)}, this)'>Skip</button>`
+            );
+        }
+        actionButtons.push(
+            `<button class="btn-ghost" data-workspace-action type="button" onclick='applyGuidedStep("reject", ${JSON.stringify(guided.history_id)}, ${JSON.stringify(step.id)}, this)'>Reject</button>`
+        );
+    }
+    return `
+        <article class="workspace-review-file-card">
+            <div class="workspace-review-file-meta">
+                <div>
+                    <strong>${WorkspaceUi.escapeHtml(step.title || step.id)}</strong>
+                    <div class="workspace-list-meta">${WorkspaceUi.escapeHtml(step.kind)}</div>
+                </div>
+                <div class="workspace-review-chip-group">
+                    <span class="workspace-chip workspace-chip-subtle">${WorkspaceUi.escapeHtml(step.status || "unknown")}</span>
+                    ${step.requires_approval ? '<span class="workspace-chip workspace-chip-subtle">approval</span>' : ""}
+                </div>
+            </div>
+            ${step.summary ? `<div class="workspace-list-meta">${WorkspaceUi.escapeHtml(step.summary)}</div>` : ""}
+            ${actionButtons.length ? `<div class="workspace-item-actions">${actionButtons.join("")}</div>` : ""}
+        </article>
+    `;
+}
+
 function openWorkspaceRun(historyId) {
     const run = window._workspaceRunIndex.get(historyId);
     if (!run) {
         showWorkspaceFeedback("error", "That run is no longer available in the current history cache.", "Retry", "retryWorkspaceLastRequest");
+        return;
+    }
+    if (run.kind === "guided_run") {
+        const guided = normalizeGuidedResult(run);
+        renderGuidedWorkspaceOutput(guided);
+        if (guided.latest_child_run?.run_output || guided.latest_child_run?.run_returncode !== null && guided.latest_child_run?.run_returncode !== undefined) {
+            renderRunResult({
+                output: guided.latest_child_run.run_output || "Latest child run completed with no output.",
+                returncode: guided.latest_child_run.run_returncode ?? 0,
+                coverage: guided.latest_child_run.run_coverage || null,
+            });
+            const copyBtn = document.getElementById("btn-copy-run");
+            if (copyBtn) copyBtn.style.display = "inline-block";
+        } else {
+            renderRunPanelIdle("This guided run has not produced a child pytest run yet.");
+        }
+        clearWorkspaceFeedback();
+        switchWorkspaceTab("review");
         return;
     }
     const result = normalizeWorkspaceResult(run);
@@ -940,6 +1234,109 @@ function openWorkspaceRun(historyId) {
     }
     clearWorkspaceFeedback();
     switchWorkspaceTab("review");
+}
+
+function resumeGuidedRun(historyId) {
+    const run = window._workspaceGuidedRunIndex.get(historyId);
+    if (run) {
+        openWorkspaceRun(historyId);
+    }
+}
+
+async function createGuidedRun(workflowSource, workflowName, button = null) {
+    const root = window._workspaceRoot;
+    if (!root) {
+        showWorkspaceFeedback("error", "Open a workspace first to start a guided run.");
+        return;
+    }
+    window._workspaceLastRequest = { type: "guided-create", workflowSource, workflowName };
+    setWorkspaceBusy(button, true, "Planning...");
+    clearWorkspaceFeedback();
+    try {
+        const body = {
+            root,
+            workflow_source: workflowSource,
+            workflow_name: workflowName,
+            scope: currentWorkspaceScope(),
+        };
+        if (body.scope === "folder") body.folder = root;
+        const result = await WorkspaceUi.fetchJson("/workspace/guided/plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (!result.ok) {
+            showWorkspaceFeedback("error", result.payload.error || "Could not create guided run.", "Retry", "retryWorkspaceLastRequest");
+            return;
+        }
+        const guided = normalizeGuidedResult(result.payload);
+        window._workspaceRunIndex.set(guided.history_id, guided);
+        window._workspaceGuidedRunIndex.set(guided.history_id, guided);
+        rememberActiveGuidedRun(guided.history_id);
+        renderGuidedWorkspaceOutput(guided);
+        if (guided.latest_child_run?.run_output || guided.latest_child_run?.run_returncode !== null && guided.latest_child_run?.run_returncode !== undefined) {
+            renderRunResult({
+                output: guided.latest_child_run.run_output || "Latest child run completed with no output.",
+                returncode: guided.latest_child_run.run_returncode ?? 0,
+                coverage: guided.latest_child_run.run_coverage || null,
+            });
+            const copyBtn = document.getElementById("btn-copy-run");
+            if (copyBtn) copyBtn.style.display = "inline-block";
+        } else {
+            renderRunPanelIdle("This guided run has not produced a child pytest run yet.");
+        }
+        switchWorkspaceTab("review");
+        await initializeWorkspace(root, { force: true, source: "refresh" });
+    } finally {
+        setWorkspaceBusy(button, false);
+    }
+}
+
+async function applyGuidedStep(action, historyId, stepId, button = null, options = {}) {
+    const root = window._workspaceRoot;
+    if (!root) {
+        showWorkspaceFeedback("error", "Open a workspace first to continue the guided run.");
+        return;
+    }
+    window._workspaceLastRequest = { type: "guided-step", action, historyId, stepId, options };
+    setWorkspaceBusy(button, true, action === "approve" ? "Running..." : "Updating...");
+    clearWorkspaceFeedback();
+    try {
+        const body = { root, history_id: historyId, step_id: stepId, action };
+        if (action === "approve") {
+            body.use_ai_generation = options.use_ai_generation === true || options.confirm_ai_generation === true && confirmAiGeneration("generate", true);
+            body.use_ai_repair = options.use_ai_repair === true || options.confirm_ai_repair === true && confirmAiRepair();
+        }
+        const result = await WorkspaceUi.fetchJson("/workspace/guided/step", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (!result.ok) {
+            showWorkspaceFeedback("error", result.payload.error || "Could not update guided step.", "Retry", "retryWorkspaceLastRequest");
+            return;
+        }
+        const guided = normalizeGuidedResult(result.payload);
+        window._workspaceRunIndex.set(guided.history_id, guided);
+        window._workspaceGuidedRunIndex.set(guided.history_id, guided);
+        rememberActiveGuidedRun(guided.history_id);
+        renderGuidedWorkspaceOutput(guided);
+        if (guided.latest_child_run?.run_output || guided.latest_child_run?.run_returncode !== null && guided.latest_child_run?.run_returncode !== undefined) {
+            renderRunResult({
+                output: guided.latest_child_run.run_output || "Latest child run completed with no output.",
+                returncode: guided.latest_child_run.run_returncode ?? 0,
+                coverage: guided.latest_child_run.run_coverage || null,
+            });
+            const copyBtn = document.getElementById("btn-copy-run");
+            if (copyBtn) copyBtn.style.display = "inline-block";
+        } else {
+            renderRunPanelIdle("This guided run has not produced a child pytest run yet.");
+        }
+        switchWorkspaceTab("review");
+        await initializeWorkspace(root, { force: true, source: "refresh" });
+    } finally {
+        setWorkspaceBusy(button, false);
+    }
 }
 
 async function runWorkspaceAction(action, write, button = null, options = {}) {

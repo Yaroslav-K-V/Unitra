@@ -122,7 +122,7 @@ function renderResult(data) {
     if (data.error) {
         let msg = data.error;
         if (msg.toLowerCase().includes("api_key") || msg.toLowerCase().includes("api key")) {
-            msg += "\n\nSet API_KEY=your_key in .env and restart the app.";
+            msg += "\n\nSave an API key for your selected remote provider in Settings, or switch to local Ollama.";
         }
         output.textContent = msg;
         output.classList.add("error");
