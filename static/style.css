@@ -1129,6 +1129,18 @@ button[data-busy="true"] {
     border: 1px solid var(--border-inner);
     background: var(--meta-bg);
     color: var(--text-muted);
+    transition: opacity var(--dur-base) var(--ease-calm),
+                transform var(--dur-base) var(--ease-calm);
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.workspace-feedback[hidden] {
+    display: flex !important;
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-6px);
 }
 
 .workspace-feedback[data-kind="error"] {
@@ -1143,17 +1155,31 @@ button[data-busy="true"] {
     color: var(--run-pass-text);
 }
 
+.workspace-feedback[data-kind="info"] {
+    border-color: var(--accent-ring);
+    background: var(--accent-tint);
+    color: var(--accent-dark);
+}
+
 .workspace-feedback-copy {
     min-width: 0;
     line-height: 1.5;
 }
 
 .workspace-tab {
-    display: none;
+    display: block;
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity var(--dur-slow) var(--ease-calm);
 }
 
 .workspace-tab.active {
-    display: block;
+    visibility: visible;
+    height: auto;
+    overflow: visible;
+    opacity: 1;
 }
 
 .workspace-hero {
