@@ -164,6 +164,7 @@ async function runTests() {
     btn.disabled = true;
     btn.setAttribute("aria-busy", "true");
     clearRunResult(resultBox);
+    resultBox.innerHTML = '<span class="spinner" aria-hidden="true"></span> Running tests…';
     setRunResultClass(resultBox);
     setQuickRunState("running");
 
