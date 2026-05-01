@@ -170,16 +170,184 @@ class TuiActions:
         session.remember_result(result)
         return result
 
+    def list_guided_runs(self, session: SessionState, limit: int = 20) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.list")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        guided_runs = []
+        for history_id in container.guided.list_runs(limit=limit):
+            record = container.workspace.get_run(history_id)
+            payload = serialize_run_history_record(
+                history_id,
+                record,
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            if payload.get("kind") == "guided_run":
+                guided_runs.append(payload)
+        result = ScreenActionResult(
+            action="guided.list",
+            ok=True,
+            payload={"runs": guided_runs},
+            message="Loaded guided runs.",
+        )
+        session.remember_result(result)
+        return result
+
+    def create_guided_core(self, session: SessionState) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.create")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        target = session.selected_target.to_test_target(session.active_workspace_root)
+        guided = container.guided.create_core_run(target)
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.create",
+            ok=True,
+            payload=payload,
+            message="Created a guided run.",
+        )
+        session.remember_result(result)
+        return result
+
+    def create_guided_job(self, session: SessionState, name: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.create")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        guided = container.guided.create_job_run(name)
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.create",
+            ok=True,
+            payload=payload,
+            message=f"Created a guided run from '{name}'.",
+        )
+        session.remember_result(result)
+        return result
+
+    def show_guided_run(self, session: SessionState, history_id: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.show")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        payload = serialize_run_history_record(
+            history_id,
+            container.workspace.get_run(history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.show",
+            ok=payload.get("status") != "cancelled",
+            payload=payload,
+            message=f"Loaded guided run {history_id}",
+        )
+        session.remember_result(result)
+        return result
+
+    def approve_guided_step(
+        self,
+        session: SessionState,
+        history_id: str,
+        step_id: str,
+        use_ai_generation: bool = False,
+        use_ai_repair: bool = False,
+    ) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.approve")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        guided = container.guided.approve_step(
+            history_id,
+            step_id,
+            use_ai_generation=use_ai_generation,
+            use_ai_repair=use_ai_repair,
+        )
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.approve",
+            ok=True,
+            payload=payload,
+            message=f"Approved guided step '{step_id}'.",
+        )
+        session.remember_result(result)
+        return result
+
+    def skip_guided_step(self, session: SessionState, history_id: str, step_id: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.skip")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        guided = container.guided.skip_step(history_id, step_id)
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.skip",
+            ok=True,
+            payload=payload,
+            message=f"Skipped guided step '{step_id}'.",
+        )
+        session.remember_result(result)
+        return result
+
+    def reject_guided_step(self, session: SessionState, history_id: str, step_id: str) -> ScreenActionResult:
+        missing = self._require_workspace(session, "guided.reject")
+        if missing:
+            return missing
+        container = self._workspace_container(session)
+        guided = container.guided.reject_step(history_id, step_id)
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+        result = ScreenActionResult(
+            action="guided.reject",
+            ok=True,
+            payload=payload,
+            message=f"Rejected guided step '{step_id}'.",
+        )
+        session.remember_result(result)
+        return result
+
     def show_run(self, session: SessionState, history_id: str) -> ScreenActionResult:
         missing = self._require_workspace(session, "runs.show")
         if missing:
             return missing
         container = self._workspace_container(session)
         record = container.workspace.get_run(history_id)
-        payload = serialize_run_history_record(history_id, record, model=container.config.ai_model)
+        payload = serialize_run_history_record(
+            history_id,
+            record,
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
         result = ScreenActionResult(
             action="runs.show",
-            ok=payload["run"]["returncode"] in (None, 0),
+            ok=payload.get("kind") == "guided_run" or payload.get("run", {}).get("returncode") in (None, 0),
             payload=payload,
             message=f"Loaded run {history_id}",
         )

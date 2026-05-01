@@ -1,31 +1,41 @@
 import json
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Any, Callable, Optional
+
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from src.application.exceptions import DependencyError
 from src.tui.actions import TuiActions
 from src.tui.state import ScreenActionResult, SessionState
+from src.ui.styles import DEFAULT_THEME, textual_status_markup
 
 try:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Horizontal, Vertical
-    from textual.widgets import Button, Footer, Header, Input, Static, TextArea
+    from textual.events import Key
+    from textual.widgets import Button, Footer, Header, Input, ProgressBar, Static, TextArea
 
     TEXTUAL_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised only when dependency missing.
     App = object
     ComposeResult = object
     Binding = object
+    Key = object
     Horizontal = Vertical = object
-    Button = Footer = Header = Input = Static = TextArea = object
+    Button = Footer = Header = Input = ProgressBar = Static = TextArea = object
     TEXTUAL_AVAILABLE = False
 
 
 def launch_console(initial_root: str = ".", initial_screen: str = "workspace") -> int:
     if not TEXTUAL_AVAILABLE:
-        raise DependencyError("Textual is not installed. Install Unitra with the TUI dependency to use `unitra console`.")
+        raise DependencyError(
+            "Textual is not installed. Install Unitra with the TUI dependency to use `unitra console`."
+        )
     app = UnitraConsoleApp(initial_root=initial_root, initial_screen=initial_screen)
     app.run()
     return 0
@@ -34,19 +44,23 @@ def launch_console(initial_root: str = ".", initial_screen: str = "workspace") -
 if TEXTUAL_AVAILABLE:
 
     class UnitraConsoleApp(App):
-        CSS = """
+        CSS = f"""
         Screen {
             layout: vertical;
+            background: {DEFAULT_THEME.colors["bg"]};
+            color: {DEFAULT_THEME.colors["text"]};
         }
 
         #shell {
             height: 1fr;
+            padding: 0 1;
         }
 
         #sidebar, #inspector {
-            width: 28;
+            width: 30;
             padding: 1 2;
-            background: $panel;
+            background: {DEFAULT_THEME.colors["card_alt"]};
+            border: round {DEFAULT_THEME.colors["border"]};
         }
 
         #content {
@@ -54,15 +68,43 @@ if TEXTUAL_AVAILABLE:
             padding: 1 2;
         }
 
+        #task-bar {
+            display: none;
+            height: auto;
+            margin: 1 1 0 1;
+            padding: 1 2;
+            border: round {DEFAULT_THEME.colors["border_strong"]};
+            background: {DEFAULT_THEME.colors["card"]};
+        }
+
+        #task-label {
+            width: 36;
+            padding-top: 1;
+            text-style: bold;
+            color: {DEFAULT_THEME.colors["accent"]};
+        }
+
+        #task-progress {
+            width: 1fr;
+        }
+
+        #task-message {
+            display: none;
+            margin-top: 1;
+            color: {DEFAULT_THEME.colors["text_muted"]};
+        }
+
         .section {
             margin-bottom: 1;
-            border: round $primary-background-lighten-1;
+            border: round {DEFAULT_THEME.colors["border"]};
             padding: 1;
+            background: {DEFAULT_THEME.colors["card"]};
         }
 
         .screen-title {
             text-style: bold;
             margin-bottom: 1;
+            color: {DEFAULT_THEME.colors["accent"]};
         }
 
         .nav-button, .action-button {
@@ -77,29 +119,33 @@ if TEXTUAL_AVAILABLE:
 
         .output {
             height: 1fr;
-            border: round $boost;
+            border: round {DEFAULT_THEME.colors["border_strong"]};
             padding: 1;
             overflow: auto auto;
+            background: {DEFAULT_THEME.colors["card_alt"]};
         }
 
         #command-input {
             dock: bottom;
             margin: 0 1 1 1;
+            background: {DEFAULT_THEME.colors["card"]};
         }
 
         TextArea {
             height: 12;
             margin-bottom: 1;
+            background: {DEFAULT_THEME.colors["card_alt"]};
         }
         """
 
         BINDINGS = [
             Binding("ctrl+w", "focus_workspace", "Workspace"),
-            Binding("ctrl+q", "focus_quick", "Quick"),
+            Binding("ctrl+k", "focus_quick", "Quick"),
             Binding("ctrl+r", "focus_runs", "Runs"),
             Binding("ctrl+a", "focus_agents", "Agents"),
             Binding("ctrl+e", "focus_review", "Review"),
             Binding("ctrl+l", "focus_command", "Command"),
+            Binding("q", "quit", "Quit"),
         ]
 
         def __init__(self, initial_root: str = ".", initial_screen: str = "workspace") -> None:
@@ -108,12 +154,18 @@ if TEXTUAL_AVAILABLE:
             self.actions = TuiActions()
             self.initial_root = initial_root
             self.last_result: Optional[ScreenActionResult] = None
+            self._task_running = False
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
+            with Horizontal(id="task-bar"):
+                yield Static("Idle", id="task-label")
+                yield ProgressBar(total=100, show_eta=False, id="task-progress")
+            yield Static("", id="task-message")
             with Horizontal(id="shell"):
                 with Vertical(id="sidebar"):
                     yield Static("Unitra Console", classes="screen-title")
+                    yield Static("Hotkeys: g generate · r run · d diff · q quit", id="hotkey-help")
                     yield Button("Workspace", id="nav-workspace", classes="nav-button", variant="primary")
                     yield Button("Review", id="nav-review", classes="nav-button")
                     yield Button("Runs", id="nav-runs", classes="nav-button")
@@ -131,7 +183,13 @@ if TEXTUAL_AVAILABLE:
                     yield Static("", id="hint-output", classes="output")
                     yield Static("Session", classes="screen-title")
                     yield Static("", id="session-output", classes="output")
-            yield Input(placeholder="Command: open /repo | init /repo | target changed | preview [ai] | write [ai] | run | fix [ai] | runs | agent default", id="command-input")
+            yield Input(
+                placeholder=(
+                    "Command: open /repo | init /repo | target changed | preview [ai] | "
+                    "write [ai] | run | fix [ai] | runs | agent default"
+                ),
+                id="command-input",
+            )
             yield Footer()
 
         def _compose_workspace_section(self) -> ComposeResult:
@@ -160,7 +218,11 @@ if TEXTUAL_AVAILABLE:
         def _compose_review_section(self) -> ComposeResult:
             with Vertical(id="review-panel", classes="section"):
                 yield Static("Review")
-                yield Static("Planned changes and the last run result land here after preview, write, run, or fix.", id="review-output", classes="output")
+                yield Static(
+                    "Planned changes and the last run result land here after preview, write, run, or fix.",
+                    id="review-output",
+                    classes="output",
+                )
 
         def _compose_runs_section(self) -> ComposeResult:
             with Vertical(id="runs-panel", classes="section"):
@@ -217,6 +279,46 @@ if TEXTUAL_AVAILABLE:
         def action_focus_command(self) -> None:
             self.query_one("#command-input", Input).focus()
 
+        def action_hotkey_generate(self) -> None:
+            if self._editing_text():
+                return
+            if self.session.current_screen == "quick":
+                self._quick_generate()
+                return
+            self._queue_action("Generate tests", lambda: self.actions.preview_generate(self.session))
+
+        def action_hotkey_run_tests(self) -> None:
+            if self._editing_text():
+                return
+            if self.session.current_screen == "quick":
+                self._quick_run()
+                return
+            self._queue_action("Run workspace tests", lambda: self.actions.run_workspace_tests(self.session))
+
+        def action_hotkey_preview(self) -> None:
+            if self._editing_text():
+                return
+            self._set_screen("review")
+            if self.last_result is not None:
+                self._notify_text("Opened the latest preview in Review.")
+                self._run_action(self.last_result)
+                return
+            self._queue_action("Preview managed changes", lambda: self.actions.preview_generate(self.session))
+
+        def on_key(self, event: Key) -> None:
+            if self._editing_text():
+                return
+            key = (getattr(event, "key", "") or "").lower()
+            if key == "g":
+                event.stop()
+                self.action_hotkey_generate()
+            elif key == "r":
+                event.stop()
+                self.action_hotkey_run_tests()
+            elif key == "d":
+                event.stop()
+                self.action_hotkey_preview()
+
         def on_button_pressed(self, event: Button.Pressed) -> None:
             button_id = event.button.id or ""
             if button_id.startswith("nav-"):
@@ -230,15 +332,30 @@ if TEXTUAL_AVAILABLE:
                 "target-changed": lambda: self._set_target("changed"),
                 "target-folder": lambda: self._set_target("folder"),
                 "target-files": lambda: self._set_target("files"),
-                "action-preview": lambda: self._run_action(self.actions.preview_generate(self.session)),
-                "action-write": lambda: self._run_action(self.actions.write_generate(self.session)),
-                "action-run": lambda: self._run_action(self.actions.run_workspace_tests(self.session)),
-                "action-fix": lambda: self._run_action(self.actions.fix_failures(self.session, write=True)),
-                "runs-list": lambda: self._run_action(self.actions.list_runs(self.session)),
+                "action-preview": lambda: self._queue_action(
+                    "Preview managed changes",
+                    lambda: self.actions.preview_generate(self.session),
+                ),
+                "action-write": lambda: self._queue_action(
+                    "Write managed tests",
+                    lambda: self.actions.write_generate(self.session),
+                ),
+                "action-run": lambda: self._queue_action(
+                    "Run workspace tests",
+                    lambda: self.actions.run_workspace_tests(self.session),
+                ),
+                "action-fix": lambda: self._queue_action(
+                    "Repair failing tests",
+                    lambda: self.actions.fix_failures(self.session, write=True),
+                ),
+                "runs-list": lambda: self._queue_action("Load runs", lambda: self.actions.list_runs(self.session)),
                 "runs-show": self._show_run,
-                "agents-list": lambda: self._run_action(self.actions.list_agents(self.session)),
+                "agents-list": lambda: self._queue_action(
+                    "Load agents",
+                    lambda: self.actions.list_agents(self.session),
+                ),
                 "agents-show": self._show_agent,
-                "jobs-list": lambda: self._run_action(self.actions.list_jobs(self.session)),
+                "jobs-list": lambda: self._queue_action("Load jobs", lambda: self.actions.list_jobs(self.session)),
                 "quick-generate": self._quick_generate,
                 "quick-run": self._quick_run,
             }
@@ -290,35 +407,86 @@ if TEXTUAL_AVAILABLE:
                 self.query_one("#target-value-input", Input).value = value
                 self._set_target(scope)
             elif name == "preview":
-                self._run_action(self.actions.preview_generate(self.session, use_ai_generation="ai" in rest))
+                self._queue_action(
+                    "Preview managed changes",
+                    lambda: self.actions.preview_generate(self.session, use_ai_generation="ai" in rest),
+                )
             elif name == "write":
-                self._run_action(self.actions.write_generate(self.session, use_ai_generation="ai" in rest))
+                self._queue_action(
+                    "Write managed tests",
+                    lambda: self.actions.write_generate(self.session, use_ai_generation="ai" in rest),
+                )
             elif name == "run":
-                self._run_action(self.actions.run_workspace_tests(self.session))
+                self._queue_action("Run workspace tests", lambda: self.actions.run_workspace_tests(self.session))
             elif name == "fix":
-                self._run_action(
-                    self.actions.fix_failures(
+                self._queue_action(
+                    "Repair failing tests",
+                    lambda: self.actions.fix_failures(
                         self.session,
                         write=True,
                         use_ai_generation="ai" in rest,
                         use_ai_repair="repair" in rest or "ai-repair" in rest,
-                    )
+                    ),
                 )
             elif name == "runs":
-                self._run_action(self.actions.list_runs(self.session))
+                self._queue_action("Load runs", lambda: self.actions.list_runs(self.session))
                 self._set_screen("runs")
             elif name == "run-id" and rest:
                 self.query_one("#run-id-input", Input).value = rest[0]
                 self._show_run()
             elif name == "agents":
-                self._run_action(self.actions.list_agents(self.session))
+                self._queue_action("Load agents", lambda: self.actions.list_agents(self.session))
                 self._set_screen("agents")
             elif name == "agent" and rest:
                 self.query_one("#agent-name-input", Input).value = rest[0]
                 self._show_agent()
             elif name == "jobs":
-                self._run_action(self.actions.list_jobs(self.session))
+                self._queue_action("Load jobs", lambda: self.actions.list_jobs(self.session))
                 self._set_screen("agents")
+            elif name == "guide" and rest:
+                verb = rest[0].lower()
+                args = rest[1:]
+                if verb == "create":
+                    if args and args[0].lower() == "job" and len(args) > 1:
+                        self._queue_action(
+                            "Create guided job",
+                            lambda: self.actions.create_guided_job(self.session, args[1]),
+                        )
+                    else:
+                        self._queue_action("Create guided run", lambda: self.actions.create_guided_core(self.session))
+                    self._set_screen("review")
+                elif verb == "list":
+                    self._queue_action("Load guided runs", lambda: self.actions.list_guided_runs(self.session))
+                    self._set_screen("runs")
+                elif verb == "show" and args:
+                    self._queue_action("Load guided run", lambda: self.actions.show_guided_run(self.session, args[0]))
+                    self._set_screen("review")
+                elif verb == "approve" and len(args) >= 2:
+                    self._queue_action(
+                        "Approve guided step",
+                        lambda: self.actions.approve_guided_step(
+                            self.session,
+                            args[0],
+                            args[1],
+                            use_ai_generation="ai" in args,
+                            use_ai_repair="repair" in args or "ai-repair" in args,
+                        ),
+                    )
+                    self._set_screen("review")
+                elif verb == "skip" and len(args) >= 2:
+                    self._queue_action(
+                        "Skip guided step",
+                        lambda: self.actions.skip_guided_step(self.session, args[0], args[1]),
+                    )
+                    self._set_screen("review")
+                elif verb == "reject" and len(args) >= 2:
+                    self._queue_action(
+                        "Reject guided step",
+                        lambda: self.actions.reject_guided_step(self.session, args[0], args[1]),
+                    )
+                    self._set_screen("review")
+                else:
+                    self._notify_text(f"Unknown guide command: {command}")
             elif name == "quick":
                 self._set_screen("quick")
             else:
@@ -350,14 +518,14 @@ if TEXTUAL_AVAILABLE:
 
         def _open_workspace(self) -> None:
             root = self.query_one("#workspace-root-input", Input).value.strip() or "."
-            self._run_action(self.actions.select_workspace(self.session, root))
+            self._queue_action("Open workspace", lambda: self.actions.select_workspace(self.session, root))
 
         def _init_workspace(self) -> None:
             root = self.query_one("#workspace-root-input", Input).value.strip() or "."
-            self._run_action(self.actions.init_workspace(self.session, root))
+            self._queue_action("Initialize workspace", lambda: self.actions.init_workspace(self.session, root))
 
         def _validate_workspace(self) -> None:
-            self._run_action(self.actions.validate_workspace(self.session))
+            self._queue_action("Validate workspace", lambda: self.actions.validate_workspace(self.session))
 
         def _set_target(self, scope: str) -> None:
             value = self.query_one("#target-value-input", Input).value.strip()
@@ -374,23 +542,72 @@ if TEXTUAL_AVAILABLE:
         def _show_run(self) -> None:
             history_id = self.query_one("#run-id-input", Input).value.strip()
             if history_id:
-                self._run_action(self.actions.show_run(self.session, history_id))
+                self._queue_action("Load run details", lambda: self.actions.show_run(self.session, history_id))
 
         def _show_agent(self) -> None:
             name = self.query_one("#agent-name-input", Input).value.strip()
             if name:
-                self._run_action(self.actions.show_agent(self.session, name))
+                self._queue_action("Load agent profile", lambda: self.actions.show_agent(self.session, name))
 
         def _quick_generate(self) -> None:
             code = self.query_one("#quick-code-input", TextArea).text
-            self._run_action(self.actions.quick_generate(self.session, code))
+            self._queue_action("Generate quick tests", lambda: self.actions.quick_generate(self.session, code))
 
         def _quick_run(self) -> None:
             payload = self.last_result.payload if self.last_result else {}
             test_code = payload.get("test_code") or self.query_one("#quick-output", Static).renderable
             if not isinstance(test_code, str):
                 test_code = str(test_code)
-            self._run_action(self.actions.quick_run(self.session, test_code=test_code))
+            self._queue_action("Run quick tests", lambda: self.actions.quick_run(self.session, test_code=test_code))
+
+        def _editing_text(self) -> bool:
+            focused = getattr(self, "focused", None)
+            return isinstance(focused, (Input, TextArea))
+
+        def _queue_action(self, label: str, callback: Callable[[], ScreenActionResult]) -> None:
+            if self._task_running:
+                self._notify_text("Another task is already running. Wait for it to finish first.")
+                return
+            self._task_running = True
+            self._set_task_state(label=label, progress=8, message="Preparing action...", visible=True)
+            self.call_after_refresh(lambda: self._execute_queued_action(label, callback))
+
+        def _execute_queued_action(self, label: str, callback: Callable[[], ScreenActionResult]) -> None:
+            result: ScreenActionResult
+            try:
+                self._set_task_state(label=label, progress=42, message="Running workflow...", visible=True)
+                result = callback()
+            except Exception as exc:
+                result = ScreenActionResult(
+                    action=f"{self.session.current_screen}.error",
+                    ok=False,
+                    error=str(exc),
+                )
+            self._set_task_state(
+                label=label,
+                progress=100,
+                message="Completed successfully." if result.ok else "Completed with issues.",
+                visible=True,
+            )
+            self._run_action(result)
+            self.set_timer(0.8, self._clear_task_state)
+
+        def _set_task_state(self, label: str, progress: int, message: str, visible: bool) -> None:
+            self.query_one("#task-bar").display = visible
+            progress_bar = self.query_one("#task-progress", ProgressBar)
+            progress_bar.update(total=100, progress=max(0, min(100, progress)))
+            self.query_one("#task-label", Static).update(Text(label, style=f"bold {DEFAULT_THEME.colors['accent']}"))
+            task_message = self.query_one("#task-message", Static)
+            task_message.display = visible
+            task_message.update(message)
+
+        def _clear_task_state(self) -> None:
+            self._task_running = False
+            self.query_one("#task-bar").display = False
+            task_message = self.query_one("#task-message", Static)
+            task_message.display = False
+            task_message.update("")
+            self.query_one("#task-progress", ProgressBar).update(total=100, progress=0)
 
         def _run_action(self, result: ScreenActionResult) -> None:
             self.last_result = result
@@ -409,38 +626,77 @@ if TEXTUAL_AVAILABLE:
             self._refresh_hints()
 
         def _refresh_hints(self) -> None:
-            hints = "\n\n".join(f"{hint.title}\n{hint.body}" for hint in self.session.hints())
-            self.query_one("#hint-output", Static).update(hints)
-            session_summary = {
-                "workspace": self.session.active_workspace_root or "<none>",
-                "target": self.session.selected_target.describe(),
-                "profile": self.session.selected_agent_profile or "<default>",
-                "last_screen": self.session.current_screen,
-            }
-            self.query_one("#session-output", Static).update(json.dumps(session_summary, indent=2))
+            hint_panels = []
+            for hint in self.session.hints():
+                hint_panels.append(
+                    Panel(
+                        Text.from_markup(f"[bold]{hint.title}[/]\n{hint.body}"),
+                        border_style=DEFAULT_THEME.colors["border"],
+                        padding=(0, 1),
+                    )
+                )
+            self.query_one("#hint-output", Static).update(Group(*hint_panels) if hint_panels else "No hints yet.")
+
+            session_table = Table.grid(expand=True, padding=(0, 1))
+            session_table.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            session_table.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            backend = self.session.active_ai_backend
+            backend_label = backend.get("provider", "ollama") if backend else "<default>"
+            if backend.get("model"):
+                backend_label = f"{backend_label} / {backend['model']}"
+            session_table.add_row("Workspace", self.session.active_workspace_root or "<none>")
+            session_table.add_row("Target", self.session.selected_target.describe())
+            session_table.add_row("Profile", self.session.selected_agent_profile or "<default>")
+            session_table.add_row("Backend", backend_label)
+            session_table.add_row("Screen", self.session.current_screen)
+            self.query_one("#session-output", Static).update(
+                Panel(session_table, border_style=DEFAULT_THEME.colors["border"], padding=(0, 1))
+            )
 
         @staticmethod
-        def _render_payload(payload: dict) -> str:
-            return json.dumps(payload, indent=2)
+        def _render_payload(payload: dict) -> Panel:
+            return Panel(
+                Text(json.dumps(payload, indent=2), style=DEFAULT_THEME.colors["text"]),
+                title="Payload",
+                border_style=DEFAULT_THEME.colors["border"],
+            )
 
-        def _render_result(self, result: ScreenActionResult) -> str:
+        def _render_result(self, result: ScreenActionResult) -> Any:
             if result.error:
-                return result.error
+                return Panel(
+                    Text(result.error, style=DEFAULT_THEME.colors["danger"]),
+                    title="Error",
+                    border_style=DEFAULT_THEME.colors["danger"],
+                )
             if result.action == "workspace.status":
                 return self._render_workspace_status(result)
             if result.action == "workspace.init":
-                config = result.payload.get("config", {})
-                return "\n".join([
-                    result.message or "Workspace initialized.",
-                    f"Root: {config.get('root_path', self.session.active_workspace_root)}",
-                    f"Active profile: {config.get('selected_agent_profile', self.session.selected_agent_profile or 'default')}",
-                ])
+                return self._render_workspace_status(
+                    ScreenActionResult(
+                        action="workspace.status",
+                        ok=result.ok,
+                        payload={"config": result.payload.get("config", {})},
+                        message=result.message or "Workspace initialized.",
+                    )
+                )
             if result.action == "workspace.validate":
-                return "Workspace metadata looks healthy."
+                return Panel(
+                    Text.from_markup(
+                        f"{textual_status_markup('pass')}\nWorkspace metadata looks healthy."
+                    ),
+                    title="Workspace validation",
+                    border_style=DEFAULT_THEME.colors["success"],
+                )
             if result.action == "runs.list":
                 return self._render_runs_list(result.payload.get("runs", []))
             if result.action == "runs.show":
+                if result.payload.get("kind") == "guided_run":
+                    return self._render_guided_result(result.payload)
                 return self._render_job_result(result.payload)
+            if result.action in {"guided.create", "guided.show", "guided.approve", "guided.skip", "guided.reject"}:
+                return self._render_guided_result(result.payload)
+            if result.action == "guided.list":
+                return self._render_runs_list(result.payload.get("runs", []))
             if result.action == "agent.list":
                 return self._render_agent_list(result.payload.get("profiles", []))
             if result.action == "agent.show":
@@ -452,122 +708,263 @@ if TEXTUAL_AVAILABLE:
             if result.action in {"test.generate", "test.update", "test.fix-failures", "test.run", "job.run"}:
                 return self._render_job_result(result.payload)
             if result.action == "quick.generate":
-                return result.payload.get("test_code", "") or result.message
+                return Panel(
+                    Text(result.payload.get("test_code", "") or result.message, style=DEFAULT_THEME.colors["text"]),
+                    title="Quick preview",
+                    border_style=DEFAULT_THEME.colors["border_strong"],
+                )
             if result.action == "quick.run":
                 run = result.payload.get("run", {})
-                return "\n".join(
-                    item for item in [
-                        "Quick tests passed." if run.get("returncode") == 0 else "Quick tests failed.",
-                        f"Coverage: {run.get('coverage')}" if run.get("coverage") else "",
-                        run.get("output", ""),
-                    ] if item
+                return Panel(
+                    Group(
+                        Text.from_markup(textual_status_markup("pass" if run.get("returncode") == 0 else "failed")),
+                        Text(f"Coverage: {run.get('coverage')}" if run.get("coverage") else "Coverage: n/a"),
+                        Text(run.get("output", ""), style=DEFAULT_THEME.colors["text_muted"]),
+                    ),
+                    title="Quick run",
+                    border_style=(
+                        DEFAULT_THEME.colors["success"]
+                        if run.get("returncode") == 0
+                        else DEFAULT_THEME.colors["danger"]
+                    ),
                 )
             if result.payload:
                 return self._render_payload(result.payload)
             return result.message or result.action
 
-        def _render_workspace_status(self, result: ScreenActionResult) -> str:
+        def _render_workspace_status(self, result: ScreenActionResult) -> Panel:
             status = result.payload
             config = status.get("config", {})
-            return "\n".join([
-                result.message or "Workspace loaded.",
-                f"Root: {config.get('root_path', self.session.active_workspace_root)}",
-                f"Tests: {config.get('test_root', 'tests/unit')}",
-                f"Profile: {config.get('selected_agent_profile', self.session.selected_agent_profile or 'default')}",
-                f"Jobs: {', '.join(status.get('jobs', [])) or 'none'}",
-                f"Recent runs: {len(status.get('recent_runs', []))}",
-            ])
+            backend = config.get("ai_backend", {})
+            grid = Table.grid(expand=True, padding=(0, 1))
+            grid.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            grid.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            grid.add_row("Summary", result.message or "Workspace loaded.")
+            grid.add_row("Root", config.get("root_path", self.session.active_workspace_root))
+            grid.add_row("Tests", config.get("test_root", "tests/unit"))
+            grid.add_row(
+                "Profile",
+                config.get("selected_agent_profile", self.session.selected_agent_profile or "default"),
+            )
+            grid.add_row("Jobs", str(len(status.get("jobs", []))))
+            grid.add_row("Recent runs", str(len(status.get("recent_runs", []))))
+            grid.add_row(
+                "AI backend",
+                " / ".join(item for item in [backend.get("provider", "ollama"), backend.get("model", "")] if item),
+            )
+            if backend.get("base_url"):
+                grid.add_row("Endpoint", backend["base_url"])
+            return Panel(grid, title="Workspace", border_style=DEFAULT_THEME.colors["border_strong"])
 
-        def _render_runs_list(self, runs) -> str:
+        def _render_runs_list(self, runs) -> Panel:
             if not runs:
-                return "No recorded runs yet."
-            lines = ["Recent runs"]
+                return Panel(
+                    Text("No recorded runs yet.", style=DEFAULT_THEME.colors["text_muted"]),
+                    title="Runs",
+                    border_style=DEFAULT_THEME.colors["border"],
+                )
+            table = Table(expand=True, header_style=f"bold {DEFAULT_THEME.colors['accent']}")
+            table.add_column("When", ratio=2)
+            table.add_column("Kind", ratio=2)
+            table.add_column("Status", ratio=2)
+            table.add_column("Coverage", ratio=1)
             for item in runs:
                 run_id = item.get("history_id") if isinstance(item, dict) else str(item)
                 label = self._format_run_id(run_id)
                 if isinstance(item, dict):
-                    status = self._status_label(item.get("run", {}).get("returncode"))
-                    name = item.get("job_name") or item.get("mode") or "run"
-                    lines.append(f"- {label}  {name}  {status}")
+                    if item.get("kind") == "guided_run":
+                        table.add_row(
+                            label,
+                            item.get("workflow_name", "guided"),
+                            Text.from_markup(textual_status_markup(item.get("status", "unknown"))),
+                            "—",
+                        )
+                    else:
+                        status = self._status_label(item.get("run", {}).get("returncode"))
+                        name = item.get("job_name") or item.get("mode") or "run"
+                        table.add_row(
+                            label,
+                            name,
+                            Text.from_markup(textual_status_markup(status)),
+                            item.get("run", {}).get("coverage") or "—",
+                        )
                 else:
-                    lines.append(f"- {label}")
-            return "\n".join(lines)
+                    table.add_row(label, "run", Text.from_markup(textual_status_markup("unknown")), "—")
+            return Panel(table, title="Recent runs", border_style=DEFAULT_THEME.colors["border"])
 
-        def _render_agent_list(self, profiles) -> str:
+        def _render_agent_list(self, profiles) -> Panel:
             if not profiles:
-                return "No agent profiles found."
-            lines = ["Agent profiles"]
+                return Panel(
+                    Text("No agent profiles found.", style=DEFAULT_THEME.colors["text_muted"]),
+                    title="Agents",
+                    border_style=DEFAULT_THEME.colors["border"],
+                )
+            table = Table(expand=True, header_style=f"bold {DEFAULT_THEME.colors['accent_alt']}")
+            table.add_column("Name", ratio=1)
+            table.add_column("Model", ratio=2)
+            table.add_column("Roles", ratio=2)
             for profile in profiles:
                 roles = ", ".join(profile.get("roles_enabled", [])) or "no roles"
-                lines.append(f"- {profile.get('name', 'unnamed')}  model={profile.get('model', 'unknown')}  roles={roles}")
-            return "\n".join(lines)
+                table.add_row(profile.get("name", "unnamed"), profile.get("model", "unknown"), roles)
+            return Panel(table, title="Agent profiles", border_style=DEFAULT_THEME.colors["border"])
 
-        def _render_agent_profile(self, profile) -> str:
+        def _render_agent_profile(self, profile) -> Panel:
             roles = ", ".join(profile.get("roles_enabled", [])) or "none"
             effective_policy = profile.get("effective_ai_policy", {})
             workspace_policy = profile.get("workspace_ai_policy", {})
-            return "\n".join([
-                f"Agent profile: {profile.get('name', 'unnamed')}",
-                f"Model: {profile.get('model', 'unknown')}",
-                f"Roles: {roles}",
-                f"Input budget: {profile.get('input_token_budget', 'unknown')}",
-                f"Output budget: {profile.get('output_token_budget', 'unknown')}",
-                f"Failure mode: {profile.get('failure_mode', 'unknown')}",
-                f"AI policy: generation={effective_policy.get('ai_generation', 'off')} repair={effective_policy.get('ai_repair', 'ask')} explain={effective_policy.get('ai_explain', 'ask')}",
-                f"Policy source: {profile.get('ai_policy_source', 'global')} inherit={workspace_policy.get('inherit', True)}",
-            ])
-
-        def _render_job_list(self, jobs) -> str:
-            if not jobs:
-                return "No saved jobs found."
-            lines = ["Saved jobs"]
-            for job in jobs:
-                lines.append(
-                    f"- {job.get('name', 'unnamed')}  mode={job.get('mode', 'unknown')}  "
-                    f"target={job.get('target_scope', 'repo')}  output={job.get('output_policy', 'preview')}"
+            backend = self.session.active_ai_backend
+            grid = Table.grid(expand=True, padding=(0, 1))
+            grid.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            grid.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            grid.add_row("Profile", profile.get("name", "unnamed"))
+            grid.add_row("Model", profile.get("model", "unknown"))
+            grid.add_row("Roles", roles)
+            grid.add_row("Input budget", str(profile.get("input_token_budget", "unknown")))
+            grid.add_row("Output budget", str(profile.get("output_token_budget", "unknown")))
+            grid.add_row("Failure mode", profile.get("failure_mode", "unknown"))
+            grid.add_row(
+                "AI policy",
+                (
+                    f"generation={effective_policy.get('ai_generation', 'off')} "
+                    f"repair={effective_policy.get('ai_repair', 'ask')} "
+                    f"explain={effective_policy.get('ai_explain', 'ask')}"
+                ),
+            )
+            grid.add_row(
+                "Policy source",
+                f"{profile.get('ai_policy_source', 'global')} / inherit={workspace_policy.get('inherit', True)}",
+            )
+            if backend:
+                grid.add_row(
+                    "Workspace backend",
+                    " / ".join(item for item in [backend.get("provider", "ollama"), backend.get("model", "")] if item),
                 )
-            return "\n".join(lines)
+            return Panel(grid, title="Agent profile", border_style=DEFAULT_THEME.colors["border"])
 
-        def _render_job_definition(self, job) -> str:
-            return "\n".join([
-                f"Job: {job.get('name', 'unnamed')}",
-                f"Mode: {job.get('mode', 'unknown')}",
-                f"Target: {job.get('target_scope', 'repo')}",
-                f"Output: {job.get('output_policy', 'preview')}",
-                f"Timeout: {job.get('timeout', 30)}s",
-            ])
+        def _render_job_list(self, jobs) -> Panel:
+            if not jobs:
+                return Panel(
+                    Text("No saved jobs found.", style=DEFAULT_THEME.colors["text_muted"]),
+                    title="Jobs",
+                    border_style=DEFAULT_THEME.colors["border"],
+                )
+            table = Table(expand=True, header_style=f"bold {DEFAULT_THEME.colors['accent_alt']}")
+            table.add_column("Name", ratio=2)
+            table.add_column("Mode", ratio=2)
+            table.add_column("Target", ratio=1)
+            table.add_column("Output", ratio=1)
+            for job in jobs:
+                table.add_row(
+                    job.get("name", "unnamed"),
+                    job.get("mode", "unknown"),
+                    job.get("target_scope", "repo"),
+                    job.get("output_policy", "preview"),
+                )
+            return Panel(table, title="Saved jobs", border_style=DEFAULT_THEME.colors["border"])
 
-        def _render_job_result(self, payload) -> str:
+        def _render_job_definition(self, job) -> Panel:
+            grid = Table.grid(expand=True, padding=(0, 1))
+            grid.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            grid.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            grid.add_row("Job", job.get("name", "unnamed"))
+            grid.add_row("Mode", job.get("mode", "unknown"))
+            grid.add_row("Target", job.get("target_scope", "repo"))
+            grid.add_row("Output", job.get("output_policy", "preview"))
+            grid.add_row("Timeout", f"{job.get('timeout', 30)}s")
+            return Panel(grid, title="Job details", border_style=DEFAULT_THEME.colors["border"])
+
+        def _render_job_result(self, payload) -> Panel:
             run = payload.get("run", {})
             planned = payload.get("planned_files", [])
             written = payload.get("written_files", [])
             fallbacks = payload.get("fallback_context_summary", {}).get("count", 0)
-            lines = [
-                f"Job: {payload.get('job_name', payload.get('mode', 'workspace job'))}",
-                f"Mode: {payload.get('mode', 'unknown')}",
-                f"Target: {payload.get('target_scope', 'repo')}",
-                f"Planned files: {len(planned)}",
-                f"Written files: {len(written)}",
-                f"Run: {self._status_label(run.get('returncode'))}",
-            ]
+            summary = Table.grid(expand=True, padding=(0, 1))
+            summary.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            summary.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            summary.add_row("Job", payload.get("job_name", payload.get("mode", "workspace job")))
+            summary.add_row("Mode", payload.get("mode", "unknown"))
+            summary.add_row("Target", payload.get("target_scope", "repo"))
+            summary.add_row("Planned files", str(len(planned)))
+            summary.add_row("Written files", str(len(written)))
+            summary.add_row("Run", Text.from_markup(textual_status_markup(self._status_label(run.get("returncode")))))
             if payload.get("history_id"):
-                lines.append(f"History id: {payload['history_id']}")
+                summary.add_row("History id", payload["history_id"])
             if run.get("coverage"):
-                lines.append(f"Coverage: {run['coverage']}")
+                summary.add_row("Coverage", run["coverage"])
             if fallbacks:
-                lines.append(f"Fallback contexts: {fallbacks}")
+                summary.add_row("Fallback contexts", str(fallbacks))
+            sections: list[Any] = [summary]
             if planned:
-                lines.append("")
-                lines.append("Planned:")
+                planned_table = Table(expand=True, header_style=f"bold {DEFAULT_THEME.colors['accent']}")
+                planned_table.add_column("Action", ratio=1)
+                planned_table.add_column("Test path", ratio=3)
+                planned_table.add_column("AI", ratio=1)
                 for item in planned[:8]:
-                    lines.append(f"- {item.get('action', 'plan')}: {item.get('test_path', '')} [{self._ai_label(item)}]")
+                    planned_table.add_row(item.get("action", "plan"), item.get("test_path", ""), self._ai_label(item))
                 if len(planned) > 8:
-                    lines.append(f"- ... {len(planned) - 8} more")
+                    planned_table.add_row("…", f"{len(planned) - 8} more entries", "")
+                sections.extend([Text(""), planned_table])
             if run.get("output"):
-                lines.append("")
-                lines.append("Pytest output:")
-                lines.append(run["output"])
-            return "\n".join(lines)
+                sections.extend([
+                    Text(""),
+                    Panel(
+                        Text(run["output"], style=DEFAULT_THEME.colors["text_muted"]),
+                        title="Pytest output",
+                        border_style=DEFAULT_THEME.colors["border"],
+                    ),
+                ])
+            return Panel(Group(*sections), title="Run result", border_style=DEFAULT_THEME.colors["border_strong"])
+
+        def _render_guided_result(self, payload) -> Panel:
+            summary = Table.grid(expand=True, padding=(0, 1))
+            summary.add_column(style=DEFAULT_THEME.colors["text_muted"], ratio=1)
+            summary.add_column(style=DEFAULT_THEME.colors["text"], ratio=2)
+            summary.add_row("Guided run", payload.get("workflow_name", "guided"))
+            summary.add_row("Source", payload.get("workflow_source", "core"))
+            summary.add_row("Status", Text.from_markup(textual_status_markup(payload.get("status", "unknown"))))
+            summary.add_row("Target", payload.get("target_scope", "repo"))
+            if payload.get("history_id"):
+                summary.add_row("History id", payload["history_id"])
+            if payload.get("awaiting_step_id"):
+                summary.add_row("Awaiting approval", payload["awaiting_step_id"])
+            if payload.get("next_recommendation"):
+                summary.add_row("Next step", payload["next_recommendation"])
+            sections: list[Any] = [summary]
+            steps = payload.get("steps", [])
+            if steps:
+                steps_table = Table(expand=True, header_style=f"bold {DEFAULT_THEME.colors['accent_alt']}")
+                steps_table.add_column("Step", ratio=2)
+                steps_table.add_column("Status", ratio=1)
+                steps_table.add_column("Summary", ratio=3)
+                for step in steps:
+                    status = step.get("status", "unknown")
+                    if step.get("requires_approval"):
+                        status = f"{status} / approval"
+                    steps_table.add_row(
+                        step.get("id", ""),
+                        Text.from_markup(textual_status_markup(status)),
+                        step.get("summary", ""),
+                    )
+                sections.extend([Text(""), steps_table])
+            timeline = payload.get("timeline", [])
+            if timeline:
+                timeline_text = Text(style=DEFAULT_THEME.colors["text_muted"])
+                for event in timeline[-8:]:
+                    timeline_text.append(f"• {event.get('label', '')} [{event.get('status', '')}]\n")
+                sections.extend(
+                    [
+                        Text(""),
+                        Panel(
+                            timeline_text,
+                            title="Timeline",
+                            border_style=DEFAULT_THEME.colors["border"],
+                        ),
+                    ]
+                )
+            latest_child = payload.get("latest_child_run")
+            if isinstance(latest_child, dict):
+                sections.extend([Text(""), self._render_job_result(latest_child)])
+            return Panel(Group(*sections), title="Guided workflow", border_style=DEFAULT_THEME.colors["border_strong"])
 
         @staticmethod
         def _status_label(returncode) -> str:
@@ -598,5 +995,7 @@ if TEXTUAL_AVAILABLE:
             return value or "unknown run"
 
         def _notify_text(self, text: str) -> None:
-            self.query_one("#workspace-output", Static).update(text)
+            self.query_one("#workspace-output", Static).update(
+                Panel(Text(text, style=DEFAULT_THEME.colors["text_muted"]), border_style=DEFAULT_THEME.colors["border"])
+            )
             self._refresh_hints()

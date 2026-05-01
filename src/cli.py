@@ -20,6 +20,7 @@ from src.serializers import (
     serialize_workspace_status,
     to_dict,
 )
+from src.ui.styles import cli_emphasis, cli_status_text
 
 
 UNITRA_VERSION = "0.1.0"
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_tests.add_argument("--source-code", default="", help="Optional source code under test.")
     run_tests.add_argument("--source-folder", default="", help="Optional project folder.")
 
+    doctor = subparsers.add_parser("doctor", help="Inspect local dependencies and AI backend health.")
+    doctor.add_argument("--root", default=".", help="Workspace root directory.")
+
+    check = subparsers.add_parser("check", help="Run lightweight workspace validation for local automation.")
+    check.add_argument("--root", default=".", help="Workspace root directory.")
+
     recent = subparsers.add_parser("recent", help="Manage recent items.")
     recent_subparsers = recent.add_subparsers(dest="recent_command", required=True)
     recent_subparsers.add_parser("list", help="List recent items.")
@@ -70,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     settings_subparsers = settings.add_subparsers(dest="settings_command", required=True)
     settings_subparsers.add_parser("show", help="Show persisted settings.")
     settings_set = settings_subparsers.add_parser("set", help="Persist settings.")
+    settings_set.add_argument("--provider", choices=["ollama", "openai", "openrouter"], default="", help="AI provider to use.")
     settings_set.add_argument("--api-key", default="", help="API key to save.")
     settings_set.add_argument("--model", default="", help="Model name to save.")
     settings_set.add_argument("--show-hints", dest="show_hints", action="store_true", help="Show helper hints.")
@@ -87,6 +95,16 @@ def build_parser() -> argparse.ArgumentParser:
     workspace_status.add_argument("--root", default=".", help="Workspace root directory.")
     workspace_validate = workspace_subparsers.add_parser("validate", help="Validate workspace metadata.")
     workspace_validate.add_argument("--root", default=".", help="Workspace root directory.")
+    workspace_generator = workspace_subparsers.add_parser("generator", help="Manage workspace test generators.")
+    workspace_generator_subparsers = workspace_generator.add_subparsers(dest="generator_command", required=True)
+    workspace_generator_list = workspace_generator_subparsers.add_parser("list", help="List available generators.")
+    workspace_generator_list.add_argument("--root", default=".", help="Workspace root directory.")
+    workspace_generator_register = workspace_generator_subparsers.add_parser("register", help="Register a custom generator.")
+    workspace_generator_register.add_argument("factory", help="Import path like module.submodule:factory.")
+    workspace_generator_register.add_argument("--root", default=".", help="Workspace root directory.")
+    workspace_generator_unregister = workspace_generator_subparsers.add_parser("unregister", help="Remove a custom generator.")
+    workspace_generator_unregister.add_argument("factory", help="Import path like module.submodule:factory.")
+    workspace_generator_unregister.add_argument("--root", default=".", help="Workspace root directory.")
     workspace_policy = workspace_subparsers.add_parser("ai-policy", help="Manage workspace AI policy override.")
     workspace_policy_subparsers = workspace_policy.add_subparsers(dest="policy_command", required=True)
     workspace_policy_show = workspace_policy_subparsers.add_parser("show", help="Show workspace AI policy.")
@@ -122,6 +140,37 @@ def build_parser() -> argparse.ArgumentParser:
     runs_show = runs_subparsers.add_parser("show", help="Show a recorded run.")
     runs_show.add_argument("history_id", help="Run history id.")
     runs_show.add_argument("--root", default=".", help="Workspace root directory.")
+
+    guided = subparsers.add_parser("guided", help="Manage guided workspace runs.")
+    guided_subparsers = guided.add_subparsers(dest="guided_command", required=True)
+    guided_create = guided_subparsers.add_parser("create", help="Create a guided run.")
+    guided_create.add_argument("--root", default=".", help="Workspace root directory.")
+    guided_source = guided_create.add_mutually_exclusive_group()
+    guided_source.add_argument("--job", help="Create a guided plan from a saved job.")
+    guided_source.add_argument("--workflow", choices=["core"], default="core", help="Create a guided plan from a core workflow.")
+    scope = guided_create.add_mutually_exclusive_group()
+    scope.add_argument("--repo", action="store_true", help="Target the whole workspace.")
+    scope.add_argument("--folder", help="Target a folder.")
+    scope.add_argument("--files", nargs="+", help="Target explicit files.")
+    scope.add_argument("--changed", action="store_true", help="Target changed Python files from git diff HEAD.")
+    guided_list = guided_subparsers.add_parser("list", help="List guided runs.")
+    guided_list.add_argument("--root", default=".", help="Workspace root directory.")
+    guided_list.add_argument("--limit", type=int, default=20, help="Maximum number of guided runs to list.")
+    guided_show = guided_subparsers.add_parser("show", help="Show a guided run.")
+    guided_show.add_argument("history_id", help="Guided run history id.")
+    guided_show.add_argument("--root", default=".", help="Workspace root directory.")
+    for action_name, help_text in [
+        ("approve", "Approve and run a guided step."),
+        ("skip", "Skip a guided step."),
+        ("reject", "Reject and cancel a guided step."),
+    ]:
+        guided_action = guided_subparsers.add_parser(action_name, help=help_text)
+        guided_action.add_argument("history_id", help="Guided run history id.")
+        guided_action.add_argument("step_id", help="Guided step id.")
+        guided_action.add_argument("--root", default=".", help="Workspace root directory.")
+        if action_name == "approve":
+            guided_action.add_argument("--use-ai", action="store_true", help="Enable AI generation for the approved step.")
+            guided_action.add_argument("--use-ai-repair", action="store_true", help="Enable AI repair for the approved step.")
 
     agent = subparsers.add_parser("agent", help="Inspect workspace agent profiles.")
     agent_subparsers = agent.add_subparsers(dest="agent_command", required=True)
@@ -235,6 +284,16 @@ def _dispatch(args):
             run={"output": result.output, "returncode": result.returncode, "coverage": result.coverage},
         )
         return payload, EXIT_TEST_FAILURE if result.returncode else 0
+    if args.command == "doctor":
+        container = _container_for_root(args.root)
+        result = container.doctor.doctor(args.root)
+        payload = _success("doctor", workspace_root=_workspace_root(args.root), result=_serialize_diagnostic_report(result))
+        return payload, 0 if result.ok else EXIT_ENVIRONMENT
+    if args.command == "check":
+        container = _container_for_root(args.root)
+        result = container.doctor.check(args.root)
+        payload = _success("check", workspace_root=_workspace_root(args.root), result=_serialize_diagnostic_report(result))
+        return payload, 0 if result.ok else EXIT_VALIDATION
     if args.command == "recent" and args.recent_command == "list":
         container = get_container()
         return _success("recent list", result=[item.__dict__ for item in container.recent.list_recent()]), 0
@@ -243,14 +302,24 @@ def _dispatch(args):
         config = getattr(container, "config", None)
         ai_policy = _ai_policy_from_args(args, base=getattr(config, "ai_policy", AiPolicy()))
         result = container.settings.save_settings(
-            SaveSettingsRequest(api_key=args.api_key, model=args.model, show_hints=args.show_hints, ai_policy=ai_policy)
+            SaveSettingsRequest(
+                provider=args.provider,
+                api_key=args.api_key,
+                model=args.model,
+                show_hints=args.show_hints,
+                ai_policy=ai_policy,
+            )
         )
         return _success(
             "settings set",
             result={
                 "ok": result.saved,
+                "provider": result.provider,
                 "model": result.model,
                 "api_key_set": result.api_key_set,
+                "openai_api_key_set": result.openai_api_key_set,
+                "openrouter_api_key_set": result.openrouter_api_key_set,
+                "ollama_api_key_set": result.ollama_api_key_set,
                 "show_hints": result.show_hints,
                 "ai_policy": getattr(result, "ai_policy", AiPolicy()).to_dict(),
             },
@@ -261,8 +330,12 @@ def _dispatch(args):
         return _success(
             "settings show",
             result={
+                "provider": result.provider,
                 "model": result.model,
                 "api_key_set": result.api_key_set,
+                "openai_api_key_set": result.openai_api_key_set,
+                "openrouter_api_key_set": result.openrouter_api_key_set,
+                "ollama_api_key_set": result.ollama_api_key_set,
                 "show_hints": result.show_hints,
                 "ai_policy": result.ai_policy.to_dict(),
             },
@@ -280,6 +353,26 @@ def _dispatch(args):
                 "workspace validate",
                 workspace_root=_workspace_root(args.root),
                 result={"valid": True, **serialize_workspace_status(status)},
+            ), 0
+        if args.workspace_command == "generator":
+            if args.generator_command == "list":
+                return _success(
+                    "workspace generator list",
+                    workspace_root=_workspace_root(args.root),
+                    result=container.workspace.list_generators(),
+                ), 0
+            if args.generator_command == "register":
+                updated = container.workspace.register_generator(args.factory)
+                return _success(
+                    "workspace generator register",
+                    workspace_root=_workspace_root(args.root),
+                    result={"custom_generators": updated.custom_generators},
+                ), 0
+            updated = container.workspace.unregister_generator(args.factory)
+            return _success(
+                "workspace generator unregister",
+                workspace_root=_workspace_root(args.root),
+                result={"custom_generators": updated.custom_generators},
             ), 0
         if args.workspace_command == "ai-policy":
             if args.policy_command == "show":
@@ -322,11 +415,85 @@ def _dispatch(args):
             return _success("runs list", workspace_root=_workspace_root(args.root), result=run_ids), 0
         if args.runs_command == "show":
             record = container.workspace.get_run(args.history_id)
-            serialized = serialize_run_history_record(args.history_id, record, model=container.config.ai_model)
+            serialized = serialize_run_history_record(
+                args.history_id,
+                record,
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
             payload = _success("runs show", workspace_root=_workspace_root(args.root), result=serialized)
-            if args.estimate_cost:
+            if args.estimate_cost and "fallback_context_summary" in serialized:
                 payload["estimated_cost"] = serialized["fallback_context_summary"]
-            return payload, EXIT_TEST_FAILURE if serialized["run"]["returncode"] else 0
+            run_returncode = serialized.get("run", {}).get("returncode")
+            return payload, EXIT_TEST_FAILURE if run_returncode else 0
+    if args.command == "guided":
+        container = _container_for_root(args.root)
+        if args.guided_command == "create":
+            if getattr(args, "job", None):
+                guided = container.guided.create_job_run(args.job)
+            else:
+                guided = container.guided.create_core_run(_parse_target(args))
+            serialized = serialize_run_history_record(
+                guided.history_id,
+                container.workspace.get_run(guided.history_id),
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            return _success("guided create", workspace_root=_workspace_root(args.root), result=serialized), 0
+        if args.guided_command == "list":
+            items = []
+            for history_id in container.guided.list_runs(limit=args.limit):
+                record = container.workspace.get_run(history_id)
+                serialized = serialize_run_history_record(
+                    history_id,
+                    record,
+                    model=container.config.ai_model,
+                    run_loader=lambda child_id: container.workspace.get_run(child_id),
+                )
+                if serialized.get("kind") == "guided_run":
+                    items.append(serialized)
+            return _success("guided list", workspace_root=_workspace_root(args.root), result=items), 0
+        if args.guided_command == "show":
+            record = container.workspace.get_run(args.history_id)
+            serialized = serialize_run_history_record(
+                args.history_id,
+                record,
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            return _success("guided show", workspace_root=_workspace_root(args.root), result=serialized), 0
+        if args.guided_command == "approve":
+            guided = container.guided.approve_step(
+                args.history_id,
+                args.step_id,
+                use_ai_generation=getattr(args, "use_ai", False),
+                use_ai_repair=getattr(args, "use_ai_repair", False),
+            )
+            serialized = serialize_run_history_record(
+                guided.history_id,
+                container.workspace.get_run(guided.history_id),
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            return _success("guided approve", workspace_root=_workspace_root(args.root), result=serialized), 0
+        if args.guided_command == "skip":
+            guided = container.guided.skip_step(args.history_id, args.step_id)
+            serialized = serialize_run_history_record(
+                guided.history_id,
+                container.workspace.get_run(guided.history_id),
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            return _success("guided skip", workspace_root=_workspace_root(args.root), result=serialized), 0
+        if args.guided_command == "reject":
+            guided = container.guided.reject_step(args.history_id, args.step_id)
+            serialized = serialize_run_history_record(
+                guided.history_id,
+                container.workspace.get_run(guided.history_id),
+                model=container.config.ai_model,
+                run_loader=lambda child_id: container.workspace.get_run(child_id),
+            )
+            return _success("guided reject", workspace_root=_workspace_root(args.root), result=serialized), 0
     if args.command == "agent":
         container = _container_for_root(args.root)
         if args.agent_command == "list":
@@ -389,7 +556,7 @@ def _emit_payload(payload, as_json: bool, output_file: Optional[str] = None, ver
 def _render_payload(payload, as_json: bool, verbose: bool) -> str:
     if as_json:
         return json.dumps(payload, indent=2)
-    lines = [f"{payload['command']} [{payload['status']}]"]
+    lines = [f"{cli_emphasis(payload['command'])} [{cli_status_text(payload['status'])}]"]
     if payload.get("workspace_root"):
         lines.append(f"Workspace: {payload['workspace_root']}")
     result = payload.get("result")
@@ -397,12 +564,30 @@ def _render_payload(payload, as_json: bool, verbose: bool) -> str:
         for item in result:
             if isinstance(item, dict) and "type" in item and "path" in item:
                 lines.append(f"{item['type']}: {item['path']}")
+            elif isinstance(item, dict) and item.get("kind") == "guided_run":
+                lines.append(
+                    f"- {item.get('history_id', '')}  guided:{item.get('workflow_name', 'guided')}  {item.get('status', 'unknown')}"
+                )
+            elif isinstance(item, dict) and "project_type" in item and "factory" in item:
+                status = cli_status_text("loaded" if item.get("loaded") else "error")
+                lines.append(
+                    f"- {item.get('name', 'generator')}  "
+                    f"type={item.get('project_type', 'unknown')}  "
+                    f"source={item.get('source', 'workspace')}  "
+                    f"status={status}"
+                )
+                if item.get("error") and verbose:
+                    lines.append(f"  error: {item['error']}")
             elif isinstance(item, dict) and "name" in item:
                 lines.append(f"- {item['name']}")
             else:
                 lines.append(str(item))
     elif isinstance(result, dict) and "test_code" in result:
         lines.append(result["test_code"])
+    elif isinstance(result, dict) and payload["command"] in {"doctor", "check"}:
+        lines.extend(_render_diagnostic_report(result))
+    elif isinstance(result, dict) and result.get("kind") == "guided_run":
+        lines.extend(_render_guided_result(result))
     elif isinstance(result, dict) and payload["command"] in {"job run", "test generate", "test update", "test fix-failures", "test run", "runs show"}:
         if payload.get("planned_files"):
             lines.append("Planned files:")
@@ -423,6 +608,38 @@ def _render_payload(payload, as_json: bool, verbose: bool) -> str:
     if payload.get("timings_ms") and verbose:
         lines.append(f"Timings: {json.dumps(payload['timings_ms'])}")
     return "\n".join(lines)
+
+
+def _render_guided_result(result: dict) -> List[str]:
+    lines = [
+        f"Guided run: {result.get('workflow_name', 'guided')}",
+        f"Status: {result.get('status', 'unknown')}",
+        f"Target: {result.get('target_scope', 'repo')}",
+    ]
+    if result.get("history_id"):
+        lines.append(f"History id: {result['history_id']}")
+    if result.get("awaiting_step_id"):
+        lines.append(f"Awaiting: {result['awaiting_step_id']}")
+    if result.get("next_recommendation"):
+        lines.append(result["next_recommendation"])
+    steps = result.get("steps", [])
+    if steps:
+        lines.append("")
+        lines.append("Steps:")
+        for step in steps:
+            suffix = " (approval)" if step.get("requires_approval") else ""
+            lines.append(f"- {step.get('id', '')}: {step.get('status', 'unknown')}{suffix}")
+    timeline = result.get("timeline", [])
+    if timeline:
+        lines.append("")
+        lines.append("Timeline:")
+        for event in timeline[-8:]:
+            lines.append(f"- {event.get('label', '')} [{event.get('status', '')}]")
+    latest_child = result.get("latest_child_run")
+    if isinstance(latest_child, dict):
+        lines.append("")
+        lines.append(f"Latest child run: {latest_child.get('history_id', '')} [{latest_child.get('kind', 'job_run')}]")
+    return lines
 
 
 def _emit_error(message: str, as_json: bool, exit_code: int, kind: str, output_file: Optional[str] = None) -> int:
@@ -495,6 +712,23 @@ def _serialize_ai_policy_state(state: dict) -> dict:
     }
 
 
+def _serialize_diagnostic_report(report) -> dict:
+    return {
+        "mode": report.mode,
+        "workspace_root": report.workspace_root,
+        "ok": report.ok,
+        "checks": [
+            {
+                "name": item.name,
+                "status": item.status,
+                "detail": item.detail,
+                "command": item.command,
+            }
+            for item in report.checks
+        ],
+    }
+
+
 def _success(command: str, workspace_root: str = "", result=None, **extra) -> dict:
     return {
         "command": command,
@@ -503,6 +737,21 @@ def _success(command: str, workspace_root: str = "", result=None, **extra) -> di
         "result": result,
         **extra,
     }
+
+
+def _render_diagnostic_report(result: dict) -> List[str]:
+    lines = [f"Mode: {result.get('mode', 'doctor')}"]
+    overall = "ok" if result.get("ok") else "issues found"
+    lines.append(f"Overall: {cli_status_text(overall)}")
+    for check in result.get("checks", []):
+        line = (
+            f"- {check.get('name', 'check')}: "
+            f"{cli_status_text(check.get('status', 'unknown'))} - {check.get('detail', '')}"
+        )
+        lines.append(line)
+        if check.get("command"):
+            lines.append(f"  hint: {check['command']}")
+    return lines
 
 
 def _job_command_success(command: str, result, workspace_root: str, model: str, include_cost: bool) -> dict:

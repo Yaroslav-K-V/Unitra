@@ -58,6 +58,7 @@ class SessionState:
     workspace: WorkspaceSelection = field(default_factory=WorkspaceSelection)
     selected_target: CurrentTarget = field(default_factory=CurrentTarget)
     selected_agent_profile: str = ""
+    active_ai_backend: Dict[str, Any] = field(default_factory=dict)
     last_job_result: Dict[str, Any] = field(default_factory=dict)
     last_run_summary: Dict[str, Any] = field(default_factory=dict)
     assistant_notes: List[str] = field(default_factory=list)
@@ -77,6 +78,17 @@ class SessionState:
         self.selected_target = CurrentTarget(scope=scope, folder=folder, paths=list(paths or []))
 
     def remember_result(self, result: ScreenActionResult) -> None:
+        config = result.payload.get("config", {}) if isinstance(result.payload, dict) else {}
+        if isinstance(config, dict) and isinstance(config.get("ai_backend"), dict):
+            self.active_ai_backend = dict(config["ai_backend"])
+        elif isinstance(result.payload, dict):
+            backend = {
+                "provider": result.payload.get("provider"),
+                "model": result.payload.get("model"),
+                "base_url": result.payload.get("base_url"),
+            }
+            if any(value for value in backend.values()):
+                self.active_ai_backend = {key: value for key, value in backend.items() if value}
         if result.payload.get("history_id") or result.payload.get("run"):
             self.last_job_result = result.payload
             run = result.payload.get("run") or {}
@@ -129,6 +141,16 @@ class SessionState:
                 AssistantHint(
                     title="Active profile",
                     body=f"Using agent profile '{self.selected_agent_profile}' for fallback-aware flows.",
+                )
+            )
+        if self.active_ai_backend:
+            provider = self.active_ai_backend.get("provider", "ollama")
+            model = self.active_ai_backend.get("model", "")
+            label = provider if not model else f"{provider} / {model}"
+            hints.append(
+                AssistantHint(
+                    title="AI backend",
+                    body=f"Workspace backend is set to {label}.",
                 )
             )
         return hints
