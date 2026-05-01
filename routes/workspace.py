@@ -120,7 +120,12 @@ def _workspace_run_payload(container, history_id: str):
             "llm_fallback_contexts": [],
         }
     model = getattr(container.config, "ai_model", "")
-    return serialize_run_history_record(history_id, payload, model=model)
+    return serialize_run_history_record(
+        history_id,
+        payload,
+        model=model,
+        run_loader=(lambda child_id: workspace.get_run(child_id)) if hasattr(workspace, "get_run") else None,
+    )
 
 
 def _workspace_policy_state(container):
@@ -132,6 +137,33 @@ def _workspace_policy_state(container):
         "global_ai_policy": global_policy,
         "workspace_ai_policy": {"inherit": True, **global_policy.to_dict()},
         "ai_policy_source": "global",
+    }
+
+
+def _workspace_dashboard_payload(root: str):
+    container = _container_for_root(root)
+    status = serialize_workspace_status(container.workspace.status())
+    runs = _workspace_runs_for_root(root, limit=8)
+    jobs = [to_dict(job) for job in container.workspace.list_jobs()] if hasattr(container.workspace, "list_jobs") else list(status.get("jobs", []))
+    try:
+        doctor_report = container.doctor.doctor(root)
+        doctor_checks = [
+            {"name": item.name, "status": item.status, "detail": item.detail}
+            for item in doctor_report.checks
+            if item.name.startswith("ollama") or item.name in {"workspace", "python"}
+        ]
+    except Exception:
+        doctor_checks = []
+    return {
+        "status": status,
+        "jobs": jobs,
+        "runs": runs,
+        "backend": {
+            "provider": status.get("config", {}).get("ai_backend", {}).get("provider", getattr(container.config, "ai_provider", "ollama")),
+            "model": status.get("config", {}).get("ai_backend", {}).get("model", getattr(container.config, "ai_model", "")),
+            "base_url": status.get("config", {}).get("ai_backend", {}).get("base_url", ""),
+            "checks": doctor_checks,
+        },
     }
 
 
@@ -163,6 +195,20 @@ def workspace_status():
             root,
             "status",
             lambda: serialize_workspace_status(_container_for_root(root).workspace.status()),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/dashboard", methods=["GET"])
+def workspace_dashboard():
+    root = request.args.get("root", ".")
+    try:
+        payload = _cached_payload(
+            root,
+            "dashboard",
+            lambda: _workspace_dashboard_payload(root),
         )
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -290,6 +336,86 @@ def workspace_job_run():
         return jsonify({"error": str(exc)}), 408
     _invalidate_workspace_cache(root)
     return jsonify(_job_payload(result))
+
+
+@workspace_bp.route("/workspace/guided/plan", methods=["POST"])
+def workspace_guided_plan():
+    body = request.get_json()
+    root = body.get("root", ".")
+    workflow_source = body.get("workflow_source", "core")
+    try:
+        container = _container_for_root(root)
+        if workflow_source == "job":
+            guided = container.guided.create_job_run(body.get("workflow_name", "") or body.get("job_name", ""))
+        else:
+            guided = container.guided.create_core_run(_target_from_body(body, root))
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except DependencyError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except TimeoutError as exc:
+        return jsonify({"error": str(exc)}), 408
+    _invalidate_workspace_cache(root)
+    return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/guided/step", methods=["POST"])
+def workspace_guided_step():
+    body = request.get_json()
+    root = body.get("root", ".")
+    action = body.get("action", "approve")
+    history_id = body.get("history_id", "")
+    step_id = body.get("step_id", "")
+    try:
+        container = _container_for_root(root)
+        if action == "skip":
+            guided = container.guided.skip_step(history_id, step_id)
+        elif action == "reject":
+            guided = container.guided.reject_step(history_id, step_id)
+        else:
+            guided = container.guided.approve_step(
+                history_id,
+                step_id,
+                use_ai_generation=bool(body.get("use_ai_generation", False)),
+                use_ai_repair=bool(body.get("use_ai_repair", False)),
+            )
+        payload = serialize_run_history_record(
+            guided.history_id,
+            container.workspace.get_run(guided.history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except DependencyError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except TimeoutError as exc:
+        return jsonify({"error": str(exc)}), 408
+    _invalidate_workspace_cache(root)
+    return jsonify(payload)
+
+
+@workspace_bp.route("/workspace/guided/run", methods=["GET"])
+def workspace_guided_run():
+    root = request.args.get("root", ".")
+    history_id = request.args.get("history_id", "")
+    try:
+        container = _container_for_root(root)
+        payload = serialize_run_history_record(
+            history_id,
+            container.workspace.get_run(history_id),
+            model=container.config.ai_model,
+            run_loader=lambda child_id: container.workspace.get_run(child_id),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload)
 
 
 @workspace_bp.route("/workspace/test/generate", methods=["POST"])

@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 from src.application.ai_policy import AiPolicy
 from src.application.exceptions import ValidationError
 from src.application.models import SaveSettingsRequest
-from src.container import get_container
+from src.container import get_container, reset_container
 
 generate_bp = Blueprint("generate", __name__)
 
@@ -82,17 +82,24 @@ def settings_save():
     try:
         result = get_container().settings.save_settings(
             SaveSettingsRequest(
+                provider=body.get("provider", ""),
                 api_key=body.get("api_key", ""),
                 model=body.get("model", ""),
                 show_hints=body.get("show_hints"),
                 ai_policy=AiPolicy.from_dict(body.get("ai_policy", {})) if "ai_policy" in body else None,
             )
         )
+        reset_container()
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({
         "ok": result.saved,
+        "provider": result.provider,
         "model": result.model,
+        "api_key_set": result.api_key_set,
+        "openai_api_key_set": result.openai_api_key_set,
+        "openrouter_api_key_set": result.openrouter_api_key_set,
+        "ollama_api_key_set": result.ollama_api_key_set,
         "show_hints": result.show_hints,
         "ai_policy": getattr(result, "ai_policy", AiPolicy()).to_dict(),
     })

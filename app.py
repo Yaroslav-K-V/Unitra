@@ -25,6 +25,7 @@ if sys.platform.startswith("linux"):
 
 from flask import Flask
 from routes.pages    import pages_bp
+from routes.desktop import desktop_bp
 from routes.generate import generate_bp
 from routes.runner   import runner_bp
 from routes.workspace import workspace_bp
@@ -36,6 +37,7 @@ import webview
 def create_app() -> Flask:
     flask_app = Flask(__name__)
     flask_app.register_blueprint(pages_bp)
+    flask_app.register_blueprint(desktop_bp)
     flask_app.register_blueprint(generate_bp)
     flask_app.register_blueprint(runner_bp)
     flask_app.register_blueprint(workspace_bp)
@@ -69,7 +71,7 @@ if __name__ == "__main__":
         resizable=True,
         fullscreen=False,
         maximized=False,
-        background_color="#f5f0e8",
+        background_color="#08111f",
     )
 
     def on_loading_shown():
