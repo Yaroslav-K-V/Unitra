@@ -78,10 +78,16 @@ class InMemoryRecentRepo:
 
 
 class StubSettingsRepo:
-    def save(self, api_key="", model="", show_hints=None):
-        payload = {}
+    def save(self, provider="", api_key="", model="", show_hints=None, ai_policy=None):
+        payload = {"AI_PROVIDER": provider or "ollama"}
         if api_key:
-            payload["API_KEY"] = api_key
+            if provider == "openrouter":
+                payload["OPENROUTER_API_KEY"] = api_key
+            elif provider == "ollama":
+                payload["OLLAMA_API_KEY"] = api_key
+            else:
+                payload["OPENAI_API_KEY"] = api_key
+                payload["API_KEY"] = api_key
         if model:
             payload["OPENAI_MODEL"] = model
         payload["SHOW_HINTS"] = "1" if show_hints is not False else "0"
@@ -168,10 +174,14 @@ def test_recent_service_add_and_list():
 
 def test_settings_service_returns_result():
     service = SettingsService(repository=StubSettingsRepo())
-    result = service.save_settings(SaveSettingsRequest(api_key="secret", model="gpt-test", show_hints=False))
+    result = service.save_settings(
+        SaveSettingsRequest(provider="openrouter", api_key="secret", model="openai/gpt-5.2", show_hints=False)
+    )
     assert result.saved is True
-    assert result.model == "gpt-test"
+    assert result.provider == "openrouter"
+    assert result.model == "openai/gpt-5.2"
     assert result.api_key_set is True
+    assert result.openrouter_api_key_set is True
     assert result.show_hints is False
 
 
@@ -196,33 +206,62 @@ def test_settings_repository_uses_json_for_preferences_and_env_for_secret(tmp_pa
     env_path.write_text("API_KEY=secret\nOPENAI_MODEL=legacy-model\nSHOW_HINTS=0\n", encoding="utf-8")
     repo = EnvSettingsRepository(str(env_path), default_model="default-model", settings_path=str(settings_path))
 
-    saved = repo.save(model="json-model", show_hints=True, ai_policy=AiPolicy(ai_generation="ask", ai_repair="auto"))
+    saved = repo.save(
+        provider="openrouter",
+        api_key="router-secret",
+        model="openai/gpt-5.2",
+        show_hints=True,
+        ai_policy=AiPolicy(ai_generation="ask", ai_repair="auto"),
+    )
 
+    assert saved["AI_PROVIDER"] == "openrouter"
     assert saved["API_KEY"] == "secret"
-    assert saved["OPENAI_MODEL"] == "json-model"
+    assert saved["OPENROUTER_API_KEY"] == "router-secret"
+    assert saved["OPENAI_MODEL"] == "openai/gpt-5.2"
     assert saved["SHOW_HINTS"] == "1"
     assert saved["ai_policy"]["ai_generation"] == "ask"
-    assert "json-model" not in env_path.read_text(encoding="utf-8")
+    assert "openai/gpt-5.2" not in env_path.read_text(encoding="utf-8")
     assert "API_KEY=secret" in env_path.read_text(encoding="utf-8")
+    assert "OPENROUTER_API_KEY=router-secret" in env_path.read_text(encoding="utf-8")
     assert settings_path.exists()
+
+
+def test_settings_repository_defaults_to_ollama_without_key(tmp_path):
+    repo = EnvSettingsRepository(str(tmp_path / ".env"), default_model="llama3.2", settings_path=str(tmp_path / "settings.json"))
+
+    loaded = repo.load()
+
+    assert loaded["AI_PROVIDER"] == "ollama"
+    assert loaded["OPENAI_MODEL"] == "llama3.2"
+    assert loaded["OLLAMA_API_KEY"] == ""
 
 
 def test_load_config_reads_settings_json_after_legacy_env(tmp_path, monkeypatch):
     settings_path = tmp_path / "settings.json"
     settings_path.write_text(
-        '{"model": "json-model", "show_hints": true, "ai_policy": {"ai_generation": "ask"}}',
+        '{"provider": "openrouter", "model": "openai/gpt-5.2", "show_hints": true, "ai_policy": {"ai_generation": "ask"}}',
         encoding="utf-8",
     )
-    (tmp_path / ".env").write_text("OPENAI_MODEL=legacy-model\nSHOW_HINTS=0\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("AI_PROVIDER=openai\nOPENAI_MODEL=legacy-model\nSHOW_HINTS=0\n", encoding="utf-8")
     monkeypatch.setenv("UNITRA_SETTINGS_PATH", str(settings_path))
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
     monkeypatch.delenv("SHOW_HINTS", raising=False)
 
     config = load_config(root_path=str(tmp_path))
 
-    assert config.ai_model == "json-model"
+    assert config.ai_provider == "openrouter"
+    assert config.ai_model == "openai/gpt-5.2"
     assert config.show_hints is True
     assert config.ai_policy.ai_generation == "ask"
+
+
+def test_load_config_defaults_to_ollama(tmp_path, monkeypatch):
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_MODEL", raising=False)
+    config = load_config(root_path=str(tmp_path))
+    assert config.ai_provider == "ollama"
+    assert config.ai_model == "llama3.2"
 
 
 def test_agent_ai_runner_passes_effective_config(monkeypatch, tmp_path):
@@ -230,18 +269,21 @@ def test_agent_ai_runner_passes_effective_config(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_run_agent(source_code, model="", temperature=None, max_context=None):
+    def fake_run_agent(source_code, provider="", model="", temperature=None, max_context=None, base_url=""):
         captured.update({
             "source_code": source_code,
+            "provider": provider,
             "model": model,
             "temperature": temperature,
             "max_context": max_context,
+            "base_url": base_url,
         })
         return "ok"
 
     monkeypatch.setattr(ai_runner_module, "run_agent", fake_run_agent)
     runner = AgentAiRunner(
         env_path=str(tmp_path / ".env"),
+        provider="openrouter",
         model="gpt-test",
         temperature=0.4,
         max_context=1234,
@@ -250,9 +292,11 @@ def test_agent_ai_runner_passes_effective_config(monkeypatch, tmp_path):
     assert runner.run("def add(a, b): return a + b") == "ok"
     assert captured == {
         "source_code": "def add(a, b): return a + b",
+        "provider": "openrouter",
         "model": "gpt-test",
         "temperature": 0.4,
         "max_context": 1234,
+        "base_url": "",
     }
 
 
@@ -261,18 +305,21 @@ def test_agent_ai_runner_repair_parses_structured_suggestions(monkeypatch, tmp_p
 
     captured = {}
 
-    def fake_run_repair_agent(context, model="", temperature=None, max_context=None):
+    def fake_run_repair_agent(context, provider="", model="", temperature=None, max_context=None, base_url=""):
         captured.update({
             "context": context,
+            "provider": provider,
             "model": model,
             "temperature": temperature,
             "max_context": max_context,
+            "base_url": base_url,
         })
         return '{"suggestions": [{"action": "remove_edge_case", "reason": "bad edge"}]}'
 
     monkeypatch.setattr(ai_runner_module, "run_repair_agent", fake_run_repair_agent)
     runner = AgentAiRunner(
         env_path=str(tmp_path / ".env"),
+        provider="openrouter",
         model="gpt-test",
         temperature=0.4,
         max_context=1234,
@@ -282,9 +329,11 @@ def test_agent_ai_runner_repair_parses_structured_suggestions(monkeypatch, tmp_p
 
     assert suggestions == [{"action": "remove_edge_case", "reason": "bad edge"}]
     assert captured["context"]["failure_tests"] == ["test_add"]
+    assert captured["provider"] == "openrouter"
     assert captured["model"] == "gpt-test"
     assert captured["temperature"] == 0.4
     assert captured["max_context"] == 1234
+    assert captured["base_url"] == ""
 
 
 def test_load_config_reads_show_hints_from_root_env(tmp_path, monkeypatch):

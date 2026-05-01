@@ -4,6 +4,7 @@ import pytest
 
 flask = pytest.importorskip("flask")
 from src.application.ai_policy import AiPolicy, WorkspaceAiPolicy
+from routes.desktop import desktop_bp
 from routes.generate import generate_bp
 from routes.pages import pages_bp
 from routes.runner import runner_bp
@@ -30,8 +31,39 @@ class StubContainer:
             return type("RunResult", (), {"__dict__": {"output": "done", "returncode": 0, "coverage": None}})()
 
     class Settings:
+        def load_settings(self):
+            return type(
+                "SettingsResult",
+                (),
+                {
+                    "saved": False,
+                    "provider": "ollama",
+                    "model": "llama3.2",
+                    "api_key_set": True,
+                    "openai_api_key_set": False,
+                    "openrouter_api_key_set": False,
+                    "ollama_api_key_set": True,
+                    "show_hints": True,
+                    "ai_policy": AiPolicy(),
+                },
+            )()
+
         def save_settings(self, request):
-            return type("SettingsResult", (), {"saved": True, "model": request.model, "show_hints": request.show_hints if request.show_hints is not None else True})()
+            provider = request.provider or "ollama"
+            return type(
+                "SettingsResult",
+                (),
+                {
+                    "saved": True,
+                    "provider": provider,
+                    "model": request.model,
+                    "api_key_set": True if provider == "ollama" else bool(request.api_key),
+                    "openai_api_key_set": bool(request.api_key) if provider == "openai" else False,
+                    "openrouter_api_key_set": bool(request.api_key) if provider == "openrouter" else False,
+                    "ollama_api_key_set": True if provider == "ollama" else False,
+                    "show_hints": request.show_hints if request.show_hints is not None else True,
+                },
+            )()
 
     class AiGeneration:
         def generate_from_code(self, code):
@@ -54,7 +86,22 @@ class StubContainer:
                 "Status",
                 (),
                 {
-                    "config": type("Cfg", (), {"__dict__": {"root_path": ".", "selected_agent_profile": "default", "test_root": "tests/unit"}})(),
+                    "config": type(
+                        "Cfg",
+                        (),
+                        {
+                            "__dict__": {
+                                "root_path": ".",
+                                "selected_agent_profile": "default",
+                                "test_root": "tests/unit",
+                                "ai_backend": {
+                                    "provider": "ollama",
+                                    "model": "llama3.2",
+                                    "base_url": "http://localhost:11434/v1/",
+                                },
+                            }
+                        },
+                    )(),
                     "jobs": ["generate-tests"],
                     "agent_profiles": ["default"],
                     "recent_runs": ["abc"],
@@ -94,6 +141,84 @@ class StubContainer:
                 "ai_policy_source": workspace_policy.source(),
             }
 
+        def list_runs(self, limit=20):
+            return ["guided-1", "abc"][:limit]
+
+        def list_jobs(self):
+            return [
+                type(
+                    "Job",
+                    (),
+                    {
+                        "__dict__": {
+                            "name": "generate-tests",
+                            "mode": "generate",
+                            "target_scope": "repo",
+                            "output_policy": "preview",
+                        }
+                    },
+                )()
+            ]
+
+        def get_run(self, history_id):
+            if history_id == "guided-1":
+                return {
+                    "kind": "guided_run",
+                    "history_id": "guided-1",
+                    "workflow_source": "core",
+                    "workflow_name": "core_repo_flow",
+                    "status": "awaiting_approval",
+                    "target_scope": "repo",
+                    "target_value": "",
+                    "current_step_id": "write_tests",
+                    "awaiting_step_id": "write_tests",
+                    "child_run_ids": ["abc"],
+                    "steps": [
+                        {
+                            "id": "preview_changes",
+                            "kind": "preview_changes",
+                            "title": "Preview managed changes",
+                            "status": "completed",
+                            "requires_approval": False,
+                            "skippable": False,
+                            "summary": "1 planned, preview only",
+                            "child_run_id": "abc",
+                        },
+                        {
+                            "id": "write_tests",
+                            "kind": "write_tests",
+                            "title": "Write managed tests",
+                            "status": "awaiting_approval",
+                            "requires_approval": True,
+                            "skippable": False,
+                            "summary": "Awaiting approval",
+                        },
+                    ],
+                    "timeline": [
+                        {
+                            "id": "evt-1",
+                            "at": "2026-01-01T00:00:00+00:00",
+                            "stage": "plan",
+                            "step_id": "",
+                            "status": "created",
+                            "label": "Guided plan created",
+                            "detail": "Built the core repo workflow.",
+                        }
+                    ],
+                    "latest_child_run_id": "abc",
+                }
+            return {
+                "job_name": "run-tests",
+                "mode": "run-tests",
+                "target_scope": "repo",
+                "planned_files": [],
+                "written_files": [],
+                "run_output": "workspace output",
+                "run_returncode": 0,
+                "run_coverage": "90%",
+                "llm_fallback_contexts": [],
+            }
+
     class Jobs:
         def list_jobs(self):
             return ["generate-tests"]
@@ -125,6 +250,22 @@ class StubContainer:
         def fix_failed_tests(self, target, write=False):
             return self.run_job("ad-hoc-fix")
 
+    class Guided:
+        def create_core_run(self, target):
+            return type("GuidedRun", (), {"history_id": "guided-1"})()
+
+        def create_job_run(self, name):
+            return type("GuidedRun", (), {"history_id": "guided-1"})()
+
+        def approve_step(self, history_id, step_id, use_ai_generation=False, use_ai_repair=False):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
+        def skip_step(self, history_id, step_id):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
+        def reject_step(self, history_id, step_id):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
     def __init__(self):
         self.generation = self.Generation()
         self.recent = self.Recent()
@@ -134,6 +275,7 @@ class StubContainer:
         self.config = self.Config()
         self.workspace = self.Workspace()
         self.jobs = self.Jobs()
+        self.guided = self.Guided()
 
 
 def _build_app():
@@ -146,6 +288,7 @@ def _build_app():
     app.register_blueprint(generate_bp)
     app.register_blueprint(runner_bp)
     app.register_blueprint(workspace_bp)
+    app.register_blueprint(desktop_bp)
     app.register_blueprint(pages_bp)
     return app
 
@@ -208,8 +351,38 @@ def test_workspace_runs_route_uses_service(monkeypatch):
     response = client.get("/workspace/runs?root=/tmp/project&limit=3")
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload[0]["history_id"] == "abc"
-    assert payload[0]["job_name"] == "run-tests"
+    assert payload[0]["history_id"] == "guided-1"
+    assert payload[0]["kind"] == "guided_run"
+
+
+def test_workspace_guided_plan_route_uses_service(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+    response = client.post(
+        "/workspace/guided/plan",
+        json={"root": "/tmp/project", "workflow_source": "core", "scope": "repo"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["kind"] == "guided_run"
+    assert payload["history_id"] == "guided-1"
+
+
+def test_workspace_guided_step_route_uses_service(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+    response = client.post(
+        "/workspace/guided/step",
+        json={"root": "/tmp/project", "history_id": "guided-1", "step_id": "write_tests", "action": "approve"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["kind"] == "guided_run"
+    assert payload["awaiting_step_id"] == "write_tests"
 
 
 def test_recent_route_supports_explicit_recent_path(monkeypatch, tmp_path):
@@ -380,11 +553,10 @@ def test_home_page_exposes_command_center_targets():
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert 'class="home-command-grid"' in html
+    assert 'class="home-screen"' in html
+    assert "Start with code. Stay close to the tests." in html
     assert 'href="/quick"' in html
     assert 'href="/workspace"' in html
-    assert 'id="home-greeting"' in html
-    assert 'id="recent-list"' in html
     assert "/static/scripts/workspace-shared.js" in html
 
 
@@ -415,15 +587,62 @@ def test_workspace_page_exposes_feedback_and_workspace_panels():
     assert "data-workspace-action" in html
 
 
-def test_info_page_exposes_unitra_overview():
+def test_dashboard_page_exposes_workspace_panels():
+    client = _build_app().test_client()
+    response = client.get("/dashboard")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'class="dashboard-screen"' in html
+    assert 'data-desktop-view="generate"' in html
+    assert 'id="desktop-open-root"' in html
+    assert 'id="desktop-diff-preview"' in html
+    assert "/static/desktop.js" in html
+
+
+def test_workspace_dashboard_route_uses_service(monkeypatch):
+    import routes.workspace as workspace_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    client = _build_app().test_client()
+    response = client.get("/workspace/dashboard?root=/tmp/project")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["backend"]["provider"] == "ollama"
+    assert payload["backend"]["model"] == "llama3.2"
+    assert payload["jobs"][0]["name"] == "generate-tests"
+
+
+def test_desktop_state_route_uses_service(monkeypatch):
+    import routes.workspace as workspace_module
+    import routes.desktop as desktop_module
+
+    monkeypatch.setattr(workspace_module, "_container_for_root", lambda root: StubContainer())
+    monkeypatch.setattr(desktop_module, "_container_for_root", lambda root: StubContainer())
+    monkeypatch.setattr(desktop_module, "get_container", lambda: StubContainer())
+    client = _build_app().test_client()
+    response = client.get("/api/desktop/state?root=/tmp/project")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["overview"]["backend"]["provider"] == "ollama"
+    assert "settings" in payload
+    assert "metrics" in payload
+
+
+def test_info_page_exposes_start_guide_paths():
     client = _build_app().test_client()
     response = client.get("/info")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Product overview" in html
-    assert "What Unitra is" in html
-    assert "Local-first guarantees" in html
+    assert "Start guide" in html
+    assert "What do you want to do right now?" in html
+    assert "Open Quick" in html
+    assert "Open Workspace" in html
+    assert "Local-first" in html
+    assert "Where config lives" in html
 
 
 def test_workspace_container_cache_reuses_container(monkeypatch):

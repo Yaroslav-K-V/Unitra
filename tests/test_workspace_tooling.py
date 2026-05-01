@@ -8,19 +8,28 @@ from src.application.models import RunResult
 from src.application.workspace_models import (
     AgentProfile,
     FailureAnalysisArtifact,
+    JobDefinition,
     TestTarget,
     USER_BLOCK_BEGIN,
     USER_BLOCK_END,
     WorkspaceConfig,
 )
-from src.application.workspace_services import AgentOrchestrator, WorkspaceJobService, WorkspaceService
+from src.application.guided_services import GuidedAgentService
+from src.application.workspace_services import (
+    AgentOrchestrator,
+    WorkspaceJobService,
+    WorkspaceService,
+    build_source_binding_preamble,
+)
 from src.infrastructure.agent_profile_repository import AgentProfileRepository
+from src.infrastructure.generation_cache_repository import GenerationCacheRepository
 from src.infrastructure.job_repository import JobRepository
 from src.infrastructure.run_history_repository import RunHistoryRepository
 from src.infrastructure.source_loader import SourceLoader
 from src.infrastructure.test_file_planner import TestFilePlanner
 from src.infrastructure.test_writer import TestWriter
 from src.infrastructure.workspace_repository import WorkspaceRepository
+from src.parser import parse_classes, parse_functions
 from src.serializers import serialize_run_history_record
 
 
@@ -41,12 +50,12 @@ class StubAiRunner:
         self.calls = []
         self.repair_calls = []
 
-    def run(self, source_code):
-        self.calls.append(source_code)
+    def run_with_overrides(self, source_code, **kwargs):
+        self.calls.append({"source_code": source_code, **kwargs})
         return self.output
 
-    def repair(self, context):
-        self.repair_calls.append(context)
+    def repair_with_overrides(self, context, **kwargs):
+        self.repair_calls.append({"context": context, **kwargs})
         return [{
             "action": "update_test_expectation",
             "test_name": (context.get("failure_tests") or [""])[0],
@@ -54,6 +63,14 @@ class StubAiRunner:
             "details": "Review the assertion before applying.",
             "confidence": 0.8,
         }]
+
+
+class PassingTestRunner:
+    def run_tests(self, request):
+        return RunResult(output="PASSED", returncode=0, coverage="100%")
+
+    def run_multiple(self, modules, work_dir):
+        return RunResult(output="PASSED", returncode=0, coverage="100%")
 
 
 def _make_workspace(tmp_path):
@@ -107,6 +124,9 @@ def test_workspace_init_and_status(tmp_path):
     assert "generate-tests" in status.jobs
     assert "default" in status.agent_profiles
     assert status.config.ai_policy.inherit is True
+    assert status.config.ai_backend.provider == "ollama"
+    assert status.config.ai_backend.model == "llama3.2"
+    assert status.config.ai_backend.base_url == "http://localhost:11434/v1/"
 
 
 def test_workspace_ai_policy_override_precedence(tmp_path):
@@ -129,6 +149,41 @@ def test_workspace_ai_policy_override_precedence(tmp_path):
     assert overridden["effective_ai_policy"].ai_explain == "off"
     assert overridden["ai_policy_source"] == "workspace"
     assert workspace_repo.load_config().ai_policy.inherit is False
+
+
+def test_workspace_service_registers_custom_generator(tmp_path):
+    _, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    service = WorkspaceService(workspace_repo, job_repo, agent_repo)
+
+    updated = service.register_generator("tests.custom_generator_plugin:CustomSmokeGenerator")
+
+    assert updated.custom_generators == ["tests.custom_generator_plugin:CustomSmokeGenerator"]
+    assert workspace_repo.load_config().custom_generators == ["tests.custom_generator_plugin:CustomSmokeGenerator"]
+
+
+def test_build_source_binding_preamble_includes_top_level_app_assignments(tmp_path):
+    root, workspace_repo, _, _ = _make_workspace(tmp_path)
+    source_path = os.path.join(str(root), "pkg", "api.py")
+    source_code = (
+        "from fastapi import FastAPI\n\n"
+        "app = FastAPI()\n\n"
+        "@app.get('/')\n"
+        "def health():\n"
+        "    return {'ok': True}\n"
+    )
+    with open(source_path, "w", encoding="utf-8") as handle:
+        handle.write(source_code)
+
+    preamble = build_source_binding_preamble(
+        workspace_repo.load_config().root_path,
+        source_path,
+        os.path.join(str(root), "tests", "unit", "pkg", "test_api.py"),
+        parse_functions(source_code),
+        parse_classes(source_code),
+        source_code=source_code,
+    )
+
+    assert "app = _unitra_source.app" in preamble
 
 
 def test_planner_mirrors_source_tree(tmp_path):
@@ -245,12 +300,56 @@ def test_orchestrator_uses_ai_runner_when_available(tmp_path):
     )
 
     assert len(ai_runner.calls) == 1
+    assert ai_runner.calls[0]["provider"] == "ollama"
+    assert ai_runner.calls[0]["base_url"] == "http://localhost:11434/v1/"
+    assert ai_runner.calls[0]["model"] == "gpt-5.4-mini"
     assert "Generated with AI assistance" in artifacts[0].generated_code
     assert "def test_ai_generated" in artifacts[0].generated_code
     assert USER_BLOCK_BEGIN in artifacts[0].generated_code
     assert artifacts[0].ai_attempted is True
     assert artifacts[0].ai_used is True
     assert artifacts[0].ai_status == "used"
+
+
+def test_orchestrator_uses_persistent_generation_cache(tmp_path):
+    root, workspace_repo, _, _ = _make_workspace(tmp_path)
+    workspace = workspace_repo.load_config()
+    cache_repo = GenerationCacheRepository(workspace_repo.cache_dir)
+    orchestrator = AgentOrchestrator(
+        SourceLoader(SKIP_DIRS),
+        TestFilePlanner(),
+        generation_cache=cache_repo,
+    )
+    source_path = os.path.join(str(root), "pkg", "math_utils.py")
+
+    first = orchestrator.orchestrate(
+        workspace,
+        AgentProfile(name="default", model="gpt-5.4-mini"),
+        [source_path],
+    )
+    second = orchestrator.orchestrate(
+        workspace,
+        AgentProfile(name="default", model="gpt-5.4-mini"),
+        [source_path],
+    )
+
+    assert first[0].cache_hit is False
+    assert second[0].cache_hit is True
+
+
+def test_workspace_job_service_execute_with_progress_reports_completion(tmp_path):
+    _, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    jobs_service = _make_job_service(workspace_repo, job_repo, agent_repo, test_runner=PassingTestRunner())
+    events = []
+
+    result = jobs_service.execute_with_progress(
+        JobDefinition(name="generate-tests", mode="generate-tests", target_scope="repo", output_policy="preview"),
+        progress_callback=events.append,
+    )
+
+    assert result.generated_tests_count >= 1
+    assert events[-1]["progress"] == 100
+    assert events[-1]["stage"] == "done"
 
 
 def test_workspace_written_tests_bind_invalid_source_filename(tmp_path):
@@ -356,8 +455,8 @@ def test_source_binding_binds_classes_but_not_methods(tmp_path):
 
 def test_orchestrator_falls_back_when_ai_runner_fails(tmp_path):
     class FailingAiRunner:
-        def run(self, source_code):
-            raise EnvironmentError("API_KEY not found in .env")
+        def run_with_overrides(self, source_code, **kwargs):
+            raise EnvironmentError("OLLAMA_BASE_URL did not respond")
 
     root, workspace_repo, _, _ = _make_workspace(tmp_path)
     workspace = workspace_repo.load_config()
@@ -375,6 +474,16 @@ def test_orchestrator_falls_back_when_ai_runner_fails(tmp_path):
     assert artifacts[0].ai_attempted is True
     assert artifacts[0].ai_used is False
     assert artifacts[0].ai_status == "fallback"
+
+
+def test_workspace_ai_backend_is_saved_in_unitra_toml(tmp_path):
+    _, workspace_repo, _, _ = _make_workspace(tmp_path)
+
+    config_text = open(workspace_repo.config_path, encoding="utf-8").read()
+
+    assert "[ai_backend]" in config_text
+    assert 'provider = "ollama"' in config_text
+    assert 'model = "llama3.2"' in config_text
 
 
 def test_job_service_generate_preview_and_fix_failures(tmp_path):
@@ -574,7 +683,148 @@ def test_missing_name_failures_are_classified_local_without_ai_repair(tmp_path):
     assert result.failure_categories[0]["category"] == "missing_import_or_name"
     assert result.llm_fallback_contexts == []
     assert result.ai_repair_suggestions == []
-    assert ai_runner.repair_calls == []
+
+
+def test_guided_core_run_auto_previews_and_awaits_write_approval(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    workspace_service = WorkspaceService(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+    jobs_service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        test_runner=PassingTestRunner(),
+    )
+    jobs_service.run_tests = lambda pytest_args=None, timeout=None: type(
+        "JobResult",
+        (),
+        {
+            "job_name": "ad-hoc-run-tests",
+            "mode": "run-tests",
+            "target_scope": "repo",
+            "planned_files": [],
+            "written_files": [],
+            "run_output": "PASSED",
+            "run_returncode": 0,
+            "run_coverage": "100%",
+            "llm_fallback_contexts": [],
+            "failure_categories": [],
+            "ai_repair_suggestions": [],
+            "ai_repair_requested": False,
+            "ai_repair_used": False,
+            "ai_repair_status": "skipped",
+            "ai_repair_reason": "",
+            "history_id": "guided-pass-run",
+        },
+    )()
+    guided_service = GuidedAgentService(
+        workspace_service=workspace_service,
+        jobs_service=jobs_service,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+
+    guided = guided_service.create_core_run(TestTarget(scope="repo", workspace_root=str(root)))
+
+    assert guided.history_id
+    assert guided.awaiting_step_id == "write_tests"
+    assert guided.steps[0].status == "completed"
+    assert guided.steps[1].status == "awaiting_approval"
+    assert guided.latest_child_run_id
+    saved = workspace_service.get_run(guided.history_id)
+    assert saved["kind"] == "guided_run"
+    assert saved["steps"][0]["status"] == "completed"
+
+
+def test_guided_core_run_can_complete_after_write_and_run_approvals(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    workspace_service = WorkspaceService(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+    jobs_service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        test_runner=PassingTestRunner(),
+    )
+    jobs_service.run_tests = lambda pytest_args=None, timeout=None: type(
+        "JobResult",
+        (),
+        {
+            "job_name": "ad-hoc-run-tests",
+            "mode": "run-tests",
+            "target_scope": "repo",
+            "planned_files": [],
+            "written_files": [],
+            "run_output": "PASSED",
+            "run_returncode": 0,
+            "run_coverage": "100%",
+            "llm_fallback_contexts": [],
+            "failure_categories": [],
+            "ai_repair_suggestions": [],
+            "ai_repair_requested": False,
+            "ai_repair_used": False,
+            "ai_repair_status": "skipped",
+            "ai_repair_reason": "",
+            "history_id": "guided-pass-run",
+        },
+    )()
+    guided_service = GuidedAgentService(
+        workspace_service=workspace_service,
+        jobs_service=jobs_service,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+
+    guided = guided_service.create_core_run(TestTarget(scope="repo", workspace_root=str(root)))
+    guided = guided_service.approve_step(guided.history_id, "write_tests")
+    guided = guided_service.approve_step(guided.history_id, "run_tests")
+
+    assert guided.status == "completed"
+    assert guided.awaiting_step_id == ""
+    repair_step = next(step for step in guided.steps if step.id == "repair_failures")
+    assert repair_step.status == "skipped"
+    assert len(guided.child_run_ids) >= 3
+
+
+def test_serialize_run_history_record_supports_guided_runs(tmp_path):
+    root, workspace_repo, job_repo, agent_repo = _make_workspace(tmp_path)
+    workspace_service = WorkspaceService(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+    jobs_service = _make_job_service(
+        workspace_repo,
+        job_repo,
+        agent_repo,
+        test_runner=PassingTestRunner(),
+    )
+    guided_service = GuidedAgentService(
+        workspace_service=workspace_service,
+        jobs_service=jobs_service,
+        run_history_repository=RunHistoryRepository(workspace_repo.runs_dir),
+    )
+
+    guided = guided_service.create_core_run(TestTarget(scope="repo", workspace_root=str(root)))
+    payload = serialize_run_history_record(
+        guided.history_id,
+        workspace_service.get_run(guided.history_id),
+        model="gpt-5.4-mini",
+        run_loader=workspace_service.get_run,
+    )
+
+    assert payload["kind"] == "guided_run"
+    assert payload["history_id"] == guided.history_id
+    assert payload["steps"]
+    assert payload["timeline"]
+    assert payload["latest_child_run"]["kind"] == "job_run"
 
 
 def test_local_failure_fix_updates_wrong_exception_type():

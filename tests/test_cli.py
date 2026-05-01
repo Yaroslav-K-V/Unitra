@@ -23,8 +23,12 @@ class StubContainer:
                 (),
                 {
                     "saved": False,
-                    "model": "gpt-5.4-mini",
-                    "api_key_set": False,
+                    "provider": "ollama",
+                    "model": "llama3.2",
+                    "api_key_set": True,
+                    "openai_api_key_set": False,
+                    "openrouter_api_key_set": False,
+                    "ollama_api_key_set": True,
                     "show_hints": True,
                     "ai_policy": cli_module.AiPolicy(),
                 },
@@ -36,8 +40,12 @@ class StubContainer:
                 (),
                 {
                     "saved": True,
-                    "model": request.model or "gpt-5.4-mini",
-                    "api_key_set": bool(request.api_key),
+                    "provider": request.provider or "ollama",
+                    "model": request.model or "llama3.2",
+                    "api_key_set": True if (request.provider or "ollama") == "ollama" else bool(request.api_key),
+                    "openai_api_key_set": bool(request.api_key) if (request.provider or "ollama") == "openai" else False,
+                    "openrouter_api_key_set": bool(request.api_key) if request.provider == "openrouter" else False,
+                    "ollama_api_key_set": True if (request.provider or "ollama") == "ollama" else False,
                     "show_hints": True if request.show_hints is None else request.show_hints,
                     "ai_policy": request.ai_policy or cli_module.AiPolicy(),
                 },
@@ -47,12 +55,38 @@ class StubContainer:
         def generate_from_code(self, code):
             return type("Result", (), {"__dict__": {"test_code": f"# ai {code}", "functions_found": 1}})()
 
+    class Doctor:
+        def doctor(self, root):
+            return type(
+                "Report",
+                (),
+                {
+                    "mode": "doctor",
+                    "workspace_root": root,
+                    "ok": True,
+                    "checks": [type("Check", (), {"name": "python", "status": "pass", "detail": "Python ok", "command": "python --version"})()],
+                },
+            )()
+
+        def check(self, root):
+            return type(
+                "Report",
+                (),
+                {
+                    "mode": "check",
+                    "workspace_root": root,
+                    "ok": True,
+                    "checks": [type("Check", (), {"name": "workspace", "status": "pass", "detail": "Workspace ok", "command": "unitra workspace validate"})()],
+                },
+            )()
+
     def __init__(self):
         self.generation = self.Generation()
         self.recent = self.Recent()
         self.settings = self.Settings()
         self.ai_generation = self.AiGeneration()
-        self.config = type("Config", (), {"ai_policy": cli_module.AiPolicy()})()
+        self.doctor = self.Doctor()
+        self.config = type("Config", (), {"ai_policy": cli_module.AiPolicy(), "ai_model": "llama3.2"})()
         self.test_runner = type("Runner", (), {"run_tests": lambda self, request: type("RunResult", (), {"output": "FAILED", "returncode": 1, "coverage": None})()})()
 
 
@@ -90,10 +124,11 @@ def test_cli_settings_set_json(monkeypatch):
     monkeypatch.setattr(cli_module, "get_container", lambda: StubContainer())
     stdout = io.StringIO()
     with redirect_stdout(stdout):
-        exit_code = cli_module.main(["--json", "settings", "set", "--model", "gpt-x"])
+        exit_code = cli_module.main(["--json", "settings", "set", "--provider", "openrouter", "--model", "openai/gpt-5.2"])
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
-    assert payload["result"]["model"] == "gpt-x"
+    assert payload["result"]["provider"] == "openrouter"
+    assert payload["result"]["model"] == "openai/gpt-5.2"
 
 
 def test_cli_settings_show_and_set_ai_policy(monkeypatch):
@@ -104,6 +139,7 @@ def test_cli_settings_show_and_set_ai_policy(monkeypatch):
 
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
+    assert payload["result"]["provider"] == "ollama"
     assert payload["result"]["ai_policy"]["ai_generation"] == "ask"
     assert payload["result"]["ai_policy"]["ai_repair"] == "auto"
 
@@ -113,7 +149,30 @@ def test_cli_settings_show_and_set_ai_policy(monkeypatch):
 
     assert exit_code == 0
     payload = json.loads(stdout.getvalue())
+    assert payload["result"]["provider"] == "ollama"
     assert payload["result"]["ai_policy"]["ai_generation"] == "off"
+
+
+def test_cli_doctor_json(monkeypatch):
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubContainer())
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "doctor", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["command"] == "doctor"
+    assert payload["result"]["checks"][0]["name"] == "python"
+
+
+def test_cli_check_human_output(monkeypatch):
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubContainer())
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["check", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    rendered = stdout.getvalue()
+    assert "Mode: check" in rendered
+    assert "workspace: pass" in rendered
 
 
 def test_cli_handles_validation_error(monkeypatch):

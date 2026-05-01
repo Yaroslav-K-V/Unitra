@@ -38,6 +38,52 @@ class StubWorkspaceContainer:
             return ["20260101000000000000"]
 
         def get_run(self, history_id):
+            if history_id == "guided-1":
+                return {
+                    "kind": "guided_run",
+                    "history_id": "guided-1",
+                    "workflow_source": "core",
+                    "workflow_name": "core_repo_flow",
+                    "status": "awaiting_approval",
+                    "target_scope": "repo",
+                    "target_value": "",
+                    "current_step_id": "write_tests",
+                    "awaiting_step_id": "write_tests",
+                    "child_run_ids": ["abc"],
+                    "steps": [
+                        {
+                            "id": "preview_changes",
+                            "kind": "preview_changes",
+                            "title": "Preview managed changes",
+                            "status": "completed",
+                            "requires_approval": False,
+                            "skippable": False,
+                            "child_run_id": "abc",
+                            "summary": "preview only",
+                        },
+                        {
+                            "id": "write_tests",
+                            "kind": "write_tests",
+                            "title": "Write managed tests",
+                            "status": "awaiting_approval",
+                            "requires_approval": True,
+                            "skippable": False,
+                            "summary": "Awaiting approval",
+                        },
+                    ],
+                    "timeline": [
+                        {
+                            "id": "evt-1",
+                            "at": "2026-01-01T00:00:00+00:00",
+                            "stage": "plan",
+                            "step_id": "",
+                            "status": "created",
+                            "label": "Guided plan created",
+                            "detail": "Built the core repo workflow.",
+                        }
+                    ],
+                    "latest_child_run_id": "abc",
+                }
             return {
                 "job_name": "run-tests",
                 "mode": "run-tests",
@@ -73,6 +119,25 @@ class StubWorkspaceContainer:
                 "ai_policy_source": workspace_policy.source(),
             }
 
+        def list_generators(self):
+            return [
+                {
+                    "name": "ast-basic",
+                    "project_type": "vanilla-python",
+                    "source": "builtin",
+                    "priority": 10,
+                    "factory": "src.generator_plugins.builtin:VanillaPythonGenerator",
+                    "loaded": True,
+                    "error": "",
+                }
+            ]
+
+        def register_generator(self, factory):
+            return type("Cfg", (), {"custom_generators": [factory]})()
+
+        def unregister_generator(self, factory):
+            return type("Cfg", (), {"custom_generators": []})()
+
     class Jobs:
         def list_jobs(self):
             return ["generate-tests", "run-tests"]
@@ -107,9 +172,29 @@ class StubWorkspaceContainer:
         def run_tests(self, pytest_args=None, timeout=None):
             return self.run_job("ad-hoc-run-tests")
 
+    class Guided:
+        def create_core_run(self, target):
+            return type("GuidedRun", (), {"history_id": "guided-1"})()
+
+        def create_job_run(self, name):
+            return type("GuidedRun", (), {"history_id": "guided-1"})()
+
+        def list_runs(self, limit=20):
+            return ["guided-1"][:limit]
+
+        def approve_step(self, history_id, step_id, use_ai_generation=False, use_ai_repair=False):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
+        def skip_step(self, history_id, step_id):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
+        def reject_step(self, history_id, step_id):
+            return type("GuidedRun", (), {"history_id": history_id})()
+
     def __init__(self):
         self.workspace = self.Workspace()
         self.jobs = self.Jobs()
+        self.guided = self.Guided()
         self.generation = None
         self.ai_generation = None
         self.test_runner = None
@@ -245,6 +330,47 @@ def test_cli_workspace_validate_json(monkeypatch):
     assert payload["result"]["valid"] is True
 
 
+def test_cli_workspace_generator_commands(monkeypatch):
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubWorkspaceContainer())
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "workspace", "generator", "list", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"][0]["name"] == "ast-basic"
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main([
+            "--json",
+            "workspace",
+            "generator",
+            "register",
+            "tests.custom_generator_plugin:CustomSmokeGenerator",
+            "--root",
+            "/tmp/repo",
+        ])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["custom_generators"] == ["tests.custom_generator_plugin:CustomSmokeGenerator"]
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main([
+            "--json",
+            "workspace",
+            "generator",
+            "unregister",
+            "tests.custom_generator_plugin:CustomSmokeGenerator",
+            "--root",
+            "/tmp/repo",
+        ])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["custom_generators"] == []
+
+
 def test_cli_job_show_json(monkeypatch):
     monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubWorkspaceContainer())
     stdout = io.StringIO()
@@ -313,3 +439,28 @@ def test_cli_test_generate_dry_run_overrides_write(monkeypatch):
         exit_code = cli_module.main(["--json", "test", "generate", "--root", "/tmp/repo", "--repo", "--write", "--dry-run"])
     assert exit_code == 0
     assert container.jobs.write_values == [False]
+
+
+def test_cli_guided_create_show_and_list(monkeypatch):
+    monkeypatch.setattr(cli_module, "_container_for_root", lambda root: StubWorkspaceContainer())
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "guided", "create", "--root", "/tmp/repo", "--repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["kind"] == "guided_run"
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "guided", "show", "guided-1", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"]["history_id"] == "guided-1"
+
+    stdout = io.StringIO()
+    with redirect_stdout(stdout):
+        exit_code = cli_module.main(["--json", "guided", "list", "--root", "/tmp/repo"])
+    assert exit_code == 0
+    payload = json.loads(stdout.getvalue())
+    assert payload["result"][0]["kind"] == "guided_run"
