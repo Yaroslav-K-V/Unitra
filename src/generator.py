@@ -60,6 +60,12 @@ def _default_for(annotation: Optional[str]) -> str:
     return "0"  # safe fallback for unannotated args — avoids TypeError in numeric ops
 
 
+def default_for_annotation(annotation: Optional[str]) -> str:
+    """Public wrapper used by generator plugins for deterministic default values."""
+
+    return _default_for(annotation)
+
+
 def _generate_edge_test(func: FunctionInfo) -> Optional[str]:
     """Return a @pytest.mark.parametrize test for a function, or None if not applicable."""
     raw_args = func.args[1:] if func.is_method else func.args
