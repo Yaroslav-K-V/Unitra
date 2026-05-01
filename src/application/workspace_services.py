@@ -1,12 +1,14 @@
 import ast
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import replace
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from src.application.ai_policy import AiPolicy, WorkspaceAiPolicy
 from src.application.exceptions import ValidationError
@@ -26,7 +28,8 @@ from src.application.workspace_models import (
     WorkspaceConfig,
     WorkspaceStatus,
 )
-from src.generator import generate_conftest, generate_test_module
+from src.generator_plugins import GeneratorRegistry
+from src.generator import generate_conftest
 from src.parser import parse_classes, parse_functions
 
 
@@ -56,10 +59,12 @@ def build_source_binding_preamble(
     """Build an importlib source binding block for a managed workspace test file."""
     names = [func.name for func in functions if not getattr(func, "is_method", False)]
     top_level_classes = _top_level_class_names(source_code)
+    top_level_assignments = _top_level_assignment_names(source_code)
     if source_code:
         names.extend(cls.name for cls in classes if cls.name in top_level_classes)
     else:
         names.extend(cls.name for cls in classes)
+    names.extend(top_level_assignments)
     names = sorted(dict.fromkeys(names))
     if not names:
         return ""
@@ -107,12 +112,40 @@ def _top_level_class_names(source_code: str) -> set:
     return {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
 
 
+def _top_level_assignment_names(source_code: str) -> set:
+    if not source_code:
+        return set()
+    try:
+        tree = ast.parse(source_code)
+    except SyntaxError:
+        return set()
+    names = set()
+    for node in tree.body:
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
+
+
 class WorkspaceService:
-    def __init__(self, repository, job_repository, agent_repository, run_history_repository=None):
+    def __init__(
+        self,
+        repository,
+        job_repository,
+        agent_repository,
+        run_history_repository=None,
+        generator_registry=None,
+    ):
         self._repository = repository
         self._job_repository = job_repository
         self._agent_repository = agent_repository
         self._run_history_repository = run_history_repository
+        self._generator_registry = generator_registry or GeneratorRegistry()
 
     def init_workspace(self, root_path: str) -> WorkspaceConfig:
         config = WorkspaceConfig(root_path=os.path.abspath(root_path))
@@ -183,6 +216,41 @@ class WorkspaceService:
             raise ValidationError("Run history is not configured")
         return self._run_history_repository.load(history_id)
 
+    def list_generators(self) -> List[dict]:
+        config = self._repository.load_config()
+        descriptors = self._generator_registry.describe(custom_generators=config.custom_generators)
+        return [
+            {
+                "name": item.name,
+                "project_type": item.project_type,
+                "source": item.source,
+                "priority": item.priority,
+                "factory": item.factory,
+                "loaded": item.loaded,
+                "error": item.error,
+            }
+            for item in descriptors
+        ]
+
+    def register_generator(self, factory_path: str) -> WorkspaceConfig:
+        if not factory_path.strip():
+            raise ValidationError("Generator factory path is required.")
+        self._generator_registry.validate_custom_generator(factory_path)
+        config = self._repository.load_config()
+        generators = list(config.custom_generators)
+        if factory_path not in generators:
+            generators.append(factory_path)
+        updated = replace(config, custom_generators=generators)
+        self._repository.save_config(updated)
+        return updated
+
+    def unregister_generator(self, factory_path: str) -> WorkspaceConfig:
+        config = self._repository.load_config()
+        generators = [item for item in config.custom_generators if item != factory_path]
+        updated = replace(config, custom_generators=generators)
+        self._repository.save_config(updated)
+        return updated
+
     @staticmethod
     def _default_jobs() -> List[JobDefinition]:
         return [
@@ -195,10 +263,19 @@ class WorkspaceService:
 
 
 class AgentOrchestrator:
-    def __init__(self, source_loader, planner, ai_runner=None):
+    def __init__(
+        self,
+        source_loader,
+        planner,
+        ai_runner=None,
+        generator_registry=None,
+        generation_cache=None,
+    ):
         self._source_loader = source_loader
         self._planner = planner
         self._ai_runner = ai_runner
+        self._generator_registry = generator_registry or GeneratorRegistry()
+        self._generation_cache = generation_cache
 
     def orchestrate(
         self,
@@ -206,33 +283,67 @@ class AgentOrchestrator:
         profile: AgentProfile,
         source_paths: List[str],
         use_ai_generation: bool = False,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> List[GenerationArtifact]:
         planned_files = self._planner.plan_paths(workspace, source_paths)
-        artifacts = []
-        for planned in planned_files:
-            analysis = self._analyze(planned.source_path)
-            test_plan = self._plan(planned.source_path, planned.test_path, analysis)
-            generated = self._generate(
-                workspace,
-                planned.source_path,
-                planned.test_path,
-                profile,
-                use_ai_generation=use_ai_generation,
-            )
-            notes = generated.reviewer_notes + self._review(generated.generated_code, test_plan, profile)
-            artifacts.append(
-                GenerationArtifact(
-                    source_path=planned.source_path,
-                    test_path=planned.test_path,
-                    generated_code=generated.generated_code,
-                    reviewer_notes=notes,
-                    ai_attempted=generated.ai_attempted,
-                    ai_used=generated.ai_used,
-                    ai_status=generated.ai_status,
-                    ai_reason=generated.ai_reason,
-                )
-            )
-        return artifacts
+        if not planned_files:
+            return []
+        indexed = {item.source_path: item for item in planned_files}
+        max_workers = min(4, max(1, len(planned_files)))
+        completed = 0
+        artifacts_by_path = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(
+                    self._build_artifact,
+                    workspace,
+                    profile,
+                    indexed[planned.source_path],
+                    use_ai_generation,
+                ): planned.source_path
+                for planned in planned_files
+            }
+            for future in as_completed(future_map):
+                artifact = future.result()
+                artifacts_by_path[artifact.source_path] = artifact
+                completed += 1
+                if progress_callback:
+                    progress_callback("Generating tests", completed, len(planned_files))
+        return [artifacts_by_path[item.source_path] for item in planned_files]
+
+    def _build_artifact(
+        self,
+        workspace: WorkspaceConfig,
+        profile: AgentProfile,
+        planned,
+        use_ai_generation: bool,
+    ) -> GenerationArtifact:
+        analysis = self._analyze(planned.source_path)
+        test_plan = self._plan(planned.source_path, planned.test_path, analysis)
+        generated = self._generate(
+            workspace,
+            planned.source_path,
+            planned.test_path,
+            profile,
+            use_ai_generation=use_ai_generation,
+        )
+        notes = generated.reviewer_notes + self._review(generated.generated_code, test_plan, profile)
+        return GenerationArtifact(
+            source_path=planned.source_path,
+            test_path=planned.test_path,
+            generated_code=generated.generated_code,
+            reviewer_notes=notes,
+            ai_attempted=generated.ai_attempted,
+            ai_used=generated.ai_used,
+            ai_status=generated.ai_status,
+            ai_reason=generated.ai_reason,
+            generator_name=generated.generator_name,
+            project_type=generated.project_type,
+            generator_source=generated.generator_source,
+            quality=generated.quality,
+            duration_ms=generated.duration_ms,
+            cache_hit=generated.cache_hit,
+        )
 
     def analyze_failures(self, run_output: str, write_plans, workspace: WorkspaceConfig, profile: AgentProfile) -> List[FailureAnalysisArtifact]:
         failed_lines = [line.strip() for line in run_output.splitlines() if line.strip().startswith("FAILED ")]
@@ -308,10 +419,43 @@ class AgentOrchestrator:
         profile: AgentProfile,
         use_ai_generation: bool = False,
     ) -> GenerationArtifact:
+        started = time.perf_counter()
         bundle = self._source_loader.load_file(source_path)
-        functions = parse_functions(bundle.source_code)
-        classes = parse_classes(bundle.source_code)
-        test_code = generate_test_module(functions, classes)
+        cache_key = self._generation_cache_key(
+            workspace=workspace,
+            profile=profile,
+            source_path=source_path,
+            test_path=test_path,
+            source_code=bundle.source_code,
+            use_ai_generation=use_ai_generation,
+        )
+        cached = self._load_cached_artifact(cache_key) if cache_key else None
+        if cached:
+            return GenerationArtifact(
+                source_path=source_path,
+                test_path=test_path,
+                generated_code=cached["generated_code"],
+                reviewer_notes=list(cached.get("reviewer_notes", [])),
+                ai_attempted=cached.get("ai_attempted"),
+                ai_used=cached.get("ai_used"),
+                ai_status=cached.get("ai_status", "unknown"),
+                ai_reason=cached.get("ai_reason", ""),
+                generator_name=cached.get("generator_name", "ast-basic"),
+                project_type=cached.get("project_type", "vanilla-python"),
+                generator_source=cached.get("generator_source", "cache"),
+                quality=cached.get("quality", "basic"),
+                duration_ms=float(cached.get("duration_ms", 0.0) or 0.0),
+                cache_hit=True,
+            )
+        generated_suite = self._generator_registry.generate(
+            bundle.source_code,
+            source_path=source_path,
+            workspace_root=workspace.root_path,
+            custom_generators=workspace.custom_generators,
+        )
+        functions = generated_suite.context.functions
+        classes = generated_suite.context.classes
+        test_code = generated_suite.test_code
         binding = build_source_binding_preamble(
             workspace.root_path,
             source_path,
@@ -323,13 +467,15 @@ class AgentOrchestrator:
         reviewer_notes = []
         ai_test_code, ai_attempted, ai_used, ai_status, ai_reason = self._generate_with_ai(
             bundle.source_code,
+            workspace,
             profile,
             use_ai_generation=use_ai_generation,
         )
         if ai_test_code:
             test_code = ai_test_code
             reviewer_notes.append("Generated with AI assistance.")
-        conftest = generate_conftest(classes) if classes else ""
+        conftest = generated_suite.conftest_code or (generate_conftest(classes) if classes else "")
+        quality = "enhanced" if ai_used or generated_suite.project_type != "vanilla-python" else "basic"
         managed = [MANAGED_HEADER]
         if reviewer_notes:
             managed.extend(f"# {note}" for note in reviewer_notes)
@@ -339,7 +485,7 @@ class AgentOrchestrator:
         if conftest:
             managed.extend(["", "# Suggested conftest.py content", conftest.strip()])
         managed.extend(["", USER_BLOCK_BEGIN, USER_BLOCK_END, ""])
-        return GenerationArtifact(
+        artifact = GenerationArtifact(
             source_path=source_path,
             test_path=test_path,
             generated_code="\n".join(managed),
@@ -348,9 +494,73 @@ class AgentOrchestrator:
             ai_used=ai_used,
             ai_status=ai_status,
             ai_reason=ai_reason,
+            generator_name=generated_suite.generator_name,
+            project_type=generated_suite.project_type,
+            generator_source=generated_suite.generator_source,
+            quality=quality,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            cache_hit=False,
+        )
+        self._save_cached_artifact(cache_key, artifact)
+        return artifact
+
+    def _generation_cache_key(
+        self,
+        workspace: WorkspaceConfig,
+        profile: AgentProfile,
+        source_path: str,
+        test_path: str,
+        source_code: str,
+        use_ai_generation: bool,
+    ) -> str:
+        payload = {
+            "workspace_root": workspace.root_path,
+            "test_root": workspace.test_root,
+            "source_path": os.path.abspath(source_path),
+            "test_path": os.path.abspath(test_path),
+            "source_hash": hashlib.sha1(source_code.encode("utf-8")).hexdigest(),
+            "profile": profile.name,
+            "model": profile.model,
+            "roles": profile.roles_enabled,
+            "provider": workspace.ai_backend.provider,
+            "backend_model": workspace.ai_backend.model,
+            "custom_generators": workspace.custom_generators,
+            "use_ai_generation": use_ai_generation,
+        }
+        return hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def _load_cached_artifact(self, cache_key: str) -> Optional[dict]:
+        if self._generation_cache is None:
+            return None
+        return self._generation_cache.load(cache_key)
+
+    def _save_cached_artifact(self, cache_key: str, artifact: GenerationArtifact) -> None:
+        if self._generation_cache is None or not cache_key:
+            return
+        self._generation_cache.save(
+            cache_key,
+            {
+                "generated_code": artifact.generated_code,
+                "reviewer_notes": artifact.reviewer_notes,
+                "ai_attempted": artifact.ai_attempted,
+                "ai_used": artifact.ai_used,
+                "ai_status": artifact.ai_status,
+                "ai_reason": artifact.ai_reason,
+                "generator_name": artifact.generator_name,
+                "project_type": artifact.project_type,
+                "generator_source": artifact.generator_source,
+                "quality": artifact.quality,
+                "duration_ms": artifact.duration_ms,
+            },
         )
 
-    def _generate_with_ai(self, source_code: str, profile: AgentProfile, use_ai_generation: bool = False):
+    def _generate_with_ai(
+        self,
+        source_code: str,
+        workspace: WorkspaceConfig,
+        profile: AgentProfile,
+        use_ai_generation: bool = False,
+    ):
         if not use_ai_generation:
             return "", False, False, "skipped", "AI generation was not requested."
         if self._ai_runner is None:
@@ -358,10 +568,14 @@ class AgentOrchestrator:
         if "generator" not in profile.roles_enabled:
             return "", False, False, "skipped", "Generator role is disabled for this agent profile."
         try:
-            output = self._ai_runner.run(source_code).strip()
+            output = self._run_ai_generation(
+                source_code,
+                workspace=workspace,
+                profile=profile,
+            ).strip()
         except EnvironmentError as exc:
-            reason = "API key is missing or AI environment is not configured."
-            if str(exc) and "API_KEY" not in str(exc):
+            reason = "AI backend is not configured."
+            if str(exc) and "API_KEY" not in str(exc) and "OLLAMA" not in str(exc).upper():
                 reason = "AI environment error; local AST fallback was used."
             return "", True, False, "fallback", reason
         except Exception:
@@ -454,7 +668,7 @@ class AgentOrchestrator:
         workspace: WorkspaceConfig,
         profile: AgentProfile,
     ) -> List[dict]:
-        if self._ai_runner is None or not hasattr(self._ai_runner, "repair"):
+        if self._ai_runner is None or not (hasattr(self._ai_runner, "repair_with_overrides") or hasattr(self._ai_runner, "repair")):
             return []
         suggestions = []
         for failure in failure_artifacts:
@@ -464,13 +678,41 @@ class AgentOrchestrator:
                 continue
             context = self._build_ai_repair_context(failure.llm_fallback_context, failure, workspace, profile)
             try:
-                raw_suggestions = self._ai_runner.repair(context)
+                raw_suggestions = self._run_ai_repair(
+                    context,
+                    workspace=workspace,
+                    profile=profile,
+                )
             except EnvironmentError:
                 continue
             except Exception:
                 continue
             suggestions.extend(self._normalize_ai_repair_suggestions(raw_suggestions, failure))
         return suggestions
+
+    def _run_ai_generation(self, source_code: str, workspace: WorkspaceConfig, profile: AgentProfile) -> str:
+        if hasattr(self._ai_runner, "run_with_overrides"):
+            return self._ai_runner.run_with_overrides(
+                source_code,
+                provider=workspace.ai_backend.provider,
+                model=profile.model or workspace.ai_backend.model,
+                temperature=profile.temperature,
+                max_context=profile.max_context,
+                base_url=workspace.ai_backend.base_url,
+            )
+        return self._ai_runner.run(source_code)
+
+    def _run_ai_repair(self, context: dict, workspace: WorkspaceConfig, profile: AgentProfile):
+        if hasattr(self._ai_runner, "repair_with_overrides"):
+            return self._ai_runner.repair_with_overrides(
+                context,
+                provider=workspace.ai_backend.provider,
+                model=profile.model or workspace.ai_backend.model,
+                temperature=profile.temperature,
+                max_context=profile.max_context,
+                base_url=workspace.ai_backend.base_url,
+            )
+        return self._ai_runner.repair(context)
 
     @staticmethod
     def _build_ai_repair_context(
@@ -758,9 +1000,18 @@ class WorkspaceJobService:
         return self.execute(job)
 
     def execute(self, job: JobDefinition) -> JobRunResult:
+        return self.execute_with_progress(job)
+
+    def execute_with_progress(
+        self,
+        job: JobDefinition,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> JobRunResult:
+        started = time.perf_counter()
         workspace = self._workspace_repository.load_config()
         profile = self._agent_repository.load(job.agent_profile)
         effective_ai_policy = workspace.ai_policy.effective(self._global_ai_policy)
+        self._emit_progress(progress_callback, stage="prepare", progress=8, message="Loaded workspace and agent profile.")
         self._validate_ai_generation_request(job, effective_ai_policy)
         self._validate_ai_repair_request(job, effective_ai_policy)
         source_paths = self._resolve_target_paths(workspace, TestTarget(
@@ -769,6 +1020,13 @@ class WorkspaceJobService:
             folder=job.target_value if job.target_scope == "folder" else "",
             paths=[path for path in job.target_value.split(",") if path] if job.target_scope == "files" else [],
         ))
+        self._emit_progress(
+            progress_callback,
+            stage="scan",
+            progress=18,
+            message=f"Resolved {len(source_paths)} source file(s).",
+            total_files=len(source_paths),
+        )
 
         should_write = job.output_policy in {"write", "write-run"}
         if job.mode in {"generate-and-run", "fix-failed-tests"}:
@@ -789,11 +1047,20 @@ class WorkspaceJobService:
                     planned_files, written = cached
                     preview_cached = True
             if not preview_cached:
+                self._emit_progress(progress_callback, stage="generate", progress=28, message="Generating managed tests.")
                 artifacts = self._orchestrator.orchestrate(
                     workspace,
                     profile,
                     source_paths,
                     use_ai_generation=job.use_ai_generation,
+                    progress_callback=lambda label, done, total: self._emit_progress(
+                        progress_callback,
+                        stage="generate",
+                        progress=28 + int((done / max(total, 1)) * 44),
+                        message=f"{label}: {done}/{total} file(s).",
+                        total_files=total,
+                        completed_files=done,
+                    ),
                 )
                 for artifact in artifacts:
                     planned_files.append(
@@ -804,6 +1071,12 @@ class WorkspaceJobService:
                             ai_used=artifact.ai_used,
                             ai_status=artifact.ai_status,
                             ai_reason=artifact.ai_reason,
+                            generator_name=artifact.generator_name,
+                            project_type=artifact.project_type,
+                            generator_source=artifact.generator_source,
+                            quality=artifact.quality,
+                            duration_ms=artifact.duration_ms,
+                            cache_hit=artifact.cache_hit,
                         )
                     )
                 written = self._writer.apply(planned_files, write=should_write)
@@ -816,6 +1089,14 @@ class WorkspaceJobService:
             written = []
         elif should_write and preview_cached:
             written = self._writer.apply(planned_files, write=True)
+        if planned_files:
+            self._emit_progress(
+                progress_callback,
+                stage="preview",
+                progress=76 if should_write else 84,
+                message="Prepared diff preview and managed write plans.",
+                planned_files=len(planned_files),
+            )
 
         run_output = ""
         run_returncode = None
@@ -829,6 +1110,7 @@ class WorkspaceJobService:
         ai_repair_reason = "AI repair was not needed."
 
         if job.mode in {"run-tests", "generate-and-run", "fix-failed-tests"}:
+            self._emit_progress(progress_callback, stage="run", progress=88, message="Running tests.")
             if job.mode == "run-tests":
                 run_result = self._run_workspace_tests(workspace, job)
             else:
@@ -866,6 +1148,7 @@ class WorkspaceJobService:
                 run_returncode = rerun.returncode
                 run_coverage = rerun.coverage
 
+        generator_breakdown = self._generator_breakdown(planned_files)
         result = JobRunResult(
             job_name=job.name,
             mode=job.mode,
@@ -882,9 +1165,13 @@ class WorkspaceJobService:
             ai_repair_used=ai_repair_used,
             ai_repair_status=ai_repair_status,
             ai_repair_reason=ai_repair_reason,
+            generated_tests_count=len(planned_files),
+            total_duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            cache_hits=sum(1 for item in planned_files if item.cache_hit),
+            generator_breakdown=generator_breakdown,
         )
         history_id = self._run_history_repository.save(result)
-        return JobRunResult(
+        final_result = JobRunResult(
             job_name=result.job_name,
             mode=result.mode,
             target_scope=result.target_scope,
@@ -901,7 +1188,20 @@ class WorkspaceJobService:
             ai_repair_status=result.ai_repair_status,
             ai_repair_reason=result.ai_repair_reason,
             history_id=history_id,
+            generated_tests_count=result.generated_tests_count,
+            total_duration_ms=result.total_duration_ms,
+            cache_hits=result.cache_hits,
+            generator_breakdown=result.generator_breakdown,
         )
+        self._emit_progress(
+            progress_callback,
+            stage="done",
+            progress=100,
+            message="Workspace job finished.",
+            history_id=history_id,
+            generated_tests_count=final_result.generated_tests_count,
+        )
+        return final_result
 
     def generate_tests(self, target: TestTarget, write: bool, use_ai_generation: bool = False) -> JobRunResult:
         job = JobDefinition(
@@ -1124,6 +1424,33 @@ class WorkspaceJobService:
             return absolute, None, None
         stat = os.stat(absolute)
         return absolute, stat.st_mtime_ns, stat.st_size
+
+    @staticmethod
+    def _generator_breakdown(planned_files) -> List[dict]:
+        summary = {}
+        for item in planned_files:
+            key = (item.generator_name, item.project_type, item.quality)
+            payload = summary.setdefault(
+                key,
+                {
+                    "generator_name": item.generator_name,
+                    "project_type": item.project_type,
+                    "quality": item.quality,
+                    "files": 0,
+                    "cache_hits": 0,
+                    "duration_ms": 0.0,
+                },
+            )
+            payload["files"] += 1
+            payload["cache_hits"] += 1 if item.cache_hit else 0
+            payload["duration_ms"] += float(item.duration_ms or 0.0)
+        return list(summary.values())
+
+    @staticmethod
+    def _emit_progress(progress_callback: Optional[Callable[[dict], None]], **payload) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(payload)
 
     @staticmethod
     def _apply_failure_fixes(content: str, failure: FailureAnalysisArtifact) -> str:

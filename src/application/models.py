@@ -20,6 +20,9 @@ class GenerationResult:
     classes_found: int
     tests_generated: int
     files_scanned: int = 0
+    generator_name: str = "ast-basic"
+    project_type: str = "vanilla-python"
+    generator_source: str = "builtin"
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,7 @@ class RecentItem:
 
 @dataclass(frozen=True)
 class SaveSettingsRequest:
+    provider: str = ""
     api_key: str = ""
     model: str = ""
     show_hints: Optional[bool] = None
@@ -58,7 +62,11 @@ class SaveSettingsRequest:
 @dataclass(frozen=True)
 class SettingsResult:
     saved: bool
+    provider: str = "ollama"
     model: str = ""
     api_key_set: bool = False
+    openai_api_key_set: bool = False
+    openrouter_api_key_set: bool = False
+    ollama_api_key_set: bool = False
     show_hints: bool = True
     ai_policy: AiPolicy = field(default_factory=AiPolicy)

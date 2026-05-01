@@ -43,6 +43,12 @@ class TestFilePlanner:
         ai_used=None,
         ai_status: str = "unknown",
         ai_reason: str = "",
+        generator_name: str = "ast-basic",
+        project_type: str = "vanilla-python",
+        generator_source: str = "builtin",
+        quality: str = "basic",
+        duration_ms: float = 0.0,
+        cache_hit: bool = False,
     ) -> WritePlan:
         current = ""
         preserved_user_block = ""
@@ -78,6 +84,12 @@ class TestFilePlanner:
             ai_used=ai_used,
             ai_status=ai_status,
             ai_reason=ai_reason,
+            generator_name=generator_name,
+            project_type=project_type,
+            generator_source=generator_source,
+            quality=quality,
+            duration_ms=duration_ms,
+            cache_hit=cache_hit,
         )
 
     @staticmethod

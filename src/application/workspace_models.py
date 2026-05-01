@@ -10,6 +10,15 @@ USER_BLOCK_END = "# <<< UNITRA:USER:END"
 
 
 @dataclass(frozen=True)
+class AiBackendConfig:
+    """Workspace-level AI backend settings for fallback generation and repair."""
+
+    provider: str = "ollama"
+    model: str = "llama3.2"
+    base_url: str = "http://localhost:11434/v1/"
+
+
+@dataclass(frozen=True)
 class WorkspaceConfig:
     root_path: str
     source_include: List[str] = field(default_factory=lambda: ["**/*.py"])
@@ -20,6 +29,9 @@ class WorkspaceConfig:
     preferred_pytest_args: List[str] = field(default_factory=lambda: ["-q"])
     selected_agent_profile: str = "default"
     ai_policy: WorkspaceAiPolicy = field(default_factory=WorkspaceAiPolicy)
+    ai_backend: AiBackendConfig = field(default_factory=AiBackendConfig)
+    custom_generators: List[str] = field(default_factory=list)
+    cache_dir: str = ".unitra/cache"
 
 
 @dataclass(frozen=True)
@@ -60,6 +72,12 @@ class WritePlan:
     ai_used: Optional[bool] = None
     ai_status: str = "unknown"
     ai_reason: str = ""
+    generator_name: str = "ast-basic"
+    project_type: str = "vanilla-python"
+    generator_source: str = "builtin"
+    quality: str = "basic"
+    duration_ms: float = 0.0
+    cache_hit: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,6 +91,12 @@ class ManagedFileResult:
     ai_used: Optional[bool] = None
     ai_status: str = "unknown"
     ai_reason: str = ""
+    generator_name: str = "ast-basic"
+    project_type: str = "vanilla-python"
+    generator_source: str = "builtin"
+    quality: str = "basic"
+    duration_ms: float = 0.0
+    cache_hit: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +132,10 @@ class JobRunResult:
     ai_repair_status: str = "skipped"
     ai_repair_reason: str = ""
     history_id: str = ""
+    generated_tests_count: int = 0
+    total_duration_ms: float = 0.0
+    cache_hits: int = 0
+    generator_breakdown: List[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -151,6 +179,12 @@ class GenerationArtifact:
     ai_used: Optional[bool] = None
     ai_status: str = "unknown"
     ai_reason: str = ""
+    generator_name: str = "ast-basic"
+    project_type: str = "vanilla-python"
+    generator_source: str = "builtin"
+    quality: str = "basic"
+    duration_ms: float = 0.0
+    cache_hit: bool = False
 
 
 @dataclass(frozen=True)
@@ -162,3 +196,49 @@ class FailureAnalysisArtifact:
     llm_fallback_context: Optional[dict] = None
     failure_categories: List[dict] = field(default_factory=list)
     run_output: str = ""
+
+
+@dataclass(frozen=True)
+class GuidedStep:
+    id: str
+    kind: str
+    title: str
+    status: str
+    requires_approval: bool
+    skippable: bool
+    job_mode: str = ""
+    write: bool = False
+    use_ai_generation: bool = False
+    use_ai_repair: bool = False
+    job_name: str = ""
+    child_run_id: str = ""
+    summary: str = ""
+
+
+@dataclass(frozen=True)
+class TimelineEvent:
+    id: str
+    at: str
+    stage: str
+    step_id: str
+    status: str
+    label: str
+    detail: str = ""
+    child_run_id: str = ""
+
+
+@dataclass(frozen=True)
+class GuidedRun:
+    history_id: str
+    kind: str = "guided_run"
+    workflow_source: str = "core"
+    workflow_name: str = "core"
+    status: str = "planning"
+    target_scope: str = "repo"
+    target_value: str = ""
+    current_step_id: str = ""
+    awaiting_step_id: str = ""
+    child_run_ids: List[str] = field(default_factory=list)
+    steps: List[GuidedStep] = field(default_factory=list)
+    timeline: List[TimelineEvent] = field(default_factory=list)
+    latest_child_run_id: str = ""

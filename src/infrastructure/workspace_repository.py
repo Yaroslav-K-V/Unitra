@@ -3,7 +3,7 @@ from typing import List
 
 from src.application.exceptions import ValidationError
 from src.application.ai_policy import WorkspaceAiPolicy
-from src.application.workspace_models import WorkspaceConfig
+from src.application.workspace_models import AiBackendConfig, WorkspaceConfig
 from src.infrastructure.simple_toml import dumps, loads
 
 
@@ -15,12 +15,14 @@ class WorkspaceRepository:
         self.jobs_dir = os.path.join(self.unitra_dir, "jobs")
         self.agents_dir = os.path.join(self.unitra_dir, "agents")
         self.runs_dir = os.path.join(self.unitra_dir, "runs")
+        self.cache_dir = os.path.join(self.unitra_dir, "cache")
 
     def init_workspace(self, config: WorkspaceConfig) -> WorkspaceConfig:
         os.makedirs(self.unitra_dir, exist_ok=True)
         os.makedirs(self.jobs_dir, exist_ok=True)
         os.makedirs(self.agents_dir, exist_ok=True)
         os.makedirs(self.runs_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
         self.save_config(config)
         return config
 
@@ -33,6 +35,9 @@ class WorkspaceRepository:
         run = raw.get("run", {})
         agent = raw.get("agent", {})
         ai_policy = raw.get("ai_policy", {})
+        ai_backend = raw.get("ai_backend", {})
+        generators = raw.get("generators", {})
+        cache = raw.get("cache", {})
         return WorkspaceConfig(
             root_path=self.workspace_root,
             source_include=list(workspace.get("source_include", ["**/*.py"])),
@@ -43,6 +48,13 @@ class WorkspaceRepository:
             preferred_pytest_args=list(run.get("preferred_pytest_args", ["-q"])),
             selected_agent_profile=agent.get("selected_profile", "default"),
             ai_policy=WorkspaceAiPolicy.from_dict(ai_policy),
+            ai_backend=AiBackendConfig(
+                provider=self._normalize_provider(ai_backend.get("provider", "ollama")),
+                model=ai_backend.get("model", "llama3.2"),
+                base_url=ai_backend.get("base_url", "http://localhost:11434/v1/"),
+            ),
+            custom_generators=list(generators.get("custom", [])),
+            cache_dir=cache.get("dir", ".unitra/cache"),
         )
 
     def save_config(self, config: WorkspaceConfig) -> None:
@@ -65,6 +77,17 @@ class WorkspaceRepository:
                 "selected_profile": config.selected_agent_profile,
             },
             "ai_policy": config.ai_policy.to_dict(),
+            "ai_backend": {
+                "provider": self._normalize_provider(config.ai_backend.provider),
+                "model": config.ai_backend.model,
+                "base_url": config.ai_backend.base_url,
+            },
+            "generators": {
+                "custom": list(config.custom_generators),
+            },
+            "cache": {
+                "dir": config.cache_dir,
+            },
         })
         self._write(self.config_path, text)
 
@@ -80,8 +103,18 @@ class WorkspaceRepository:
             preferred_pytest_args=config.preferred_pytest_args,
             selected_agent_profile=config.selected_agent_profile,
             ai_policy=ai_policy,
+            ai_backend=config.ai_backend,
+            custom_generators=config.custom_generators,
+            cache_dir=config.cache_dir,
         ))
         return ai_policy
+
+    @staticmethod
+    def _normalize_provider(value: object) -> str:
+        provider = str(value or "").strip().lower()
+        if provider in {"ollama", "openai", "openrouter"}:
+            return provider
+        return "ollama"
 
     def list_job_names(self) -> List[str]:
         if not os.path.isdir(self.jobs_dir):

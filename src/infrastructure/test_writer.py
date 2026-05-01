@@ -25,6 +25,12 @@ class TestWriter:
                     ai_used=plan.ai_used,
                     ai_status=plan.ai_status,
                     ai_reason=plan.ai_reason,
+                    generator_name=plan.generator_name,
+                    project_type=plan.project_type,
+                    generator_source=plan.generator_source,
+                    quality=plan.quality,
+                    duration_ms=plan.duration_ms,
+                    cache_hit=plan.cache_hit,
                 )
             )
         return results
