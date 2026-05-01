@@ -34,6 +34,8 @@ function showToast(msg) {
     if (!t) {
         t = document.createElement("div");
         t.id = "toast";
+        t.setAttribute("role", "status");
+        t.setAttribute("aria-live", "polite");
         document.body.appendChild(t);
     }
     t.textContent = msg;

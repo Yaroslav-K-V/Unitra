@@ -9,7 +9,8 @@
         <p class="subtitle">A calmer repository flow for choosing a target, previewing managed changes, and iterating through review and run results.</p>
     </header>
 
-    <div id="workspace-feedback" class="workspace-feedback" hidden></div>
+    <div id="workspace-feedback" class="workspace-feedback"
+         role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
     <div class="tab-bar workspace-tab-bar">
         <button class="tab-btn active" data-tab="overview" onclick="switchWorkspaceTab('overview')">Overview</button>

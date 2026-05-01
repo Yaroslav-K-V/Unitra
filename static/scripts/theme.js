@@ -5,6 +5,8 @@
         const toggle = document.getElementById("theme-toggle");
         if (toggle) {
             toggle.textContent = saved === "dark" ? "☀" : "◐";
+            toggle.setAttribute("aria-pressed", saved === "dark" ? "true" : "false");
+            toggle.setAttribute("aria-label", saved === "dark" ? "Switch to light theme" : "Switch to dark theme");
         }
     });
 })();
@@ -14,5 +16,8 @@ function toggleTheme() {
     const next = current === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-    document.getElementById("theme-toggle").textContent = next === "dark" ? "☀" : "◐";
+    const btn = document.getElementById("theme-toggle");
+    btn.textContent = next === "dark" ? "☀" : "◐";
+    btn.setAttribute("aria-pressed", next === "dark" ? "true" : "false");
+    btn.setAttribute("aria-label", next === "dark" ? "Switch to light theme" : "Switch to dark theme");
 }
