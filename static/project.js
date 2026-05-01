@@ -129,17 +129,36 @@ function shouldPromptForAiGeneration(action) {
         && currentWorkspaceAiPolicy().ai_generation === "ask";
 }
 
+function showConfirmBanner(message, onConfirm, onCancel) {
+    const feedback = document.getElementById("workspace-feedback");
+    if (!feedback) { onCancel(); return; }
+    feedback.removeAttribute("hidden");
+    feedback.dataset.kind = "info";
+    feedback.innerHTML = `
+        <div class="workspace-feedback-copy">${WorkspaceUi.escapeHtml(message)}</div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn-ghost" type="button" id="confirm-banner-yes">Use AI</button>
+            <button class="btn-ghost" type="button" id="confirm-banner-no">Continue locally</button>
+        </div>`;
+    document.getElementById("confirm-banner-yes").onclick = () => { clearWorkspaceFeedback(); onConfirm(); };
+    document.getElementById("confirm-banner-no").onclick = () => { clearWorkspaceFeedback(); onCancel(); };
+}
+
 function confirmAiGeneration(action, write) {
-    if (!shouldPromptForAiGeneration(action)) return false;
+    if (!shouldPromptForAiGeneration(action)) return Promise.resolve(false);
     const profile = window._workspaceAgentProfile || {};
     const backend = window._workspaceBackend || {};
     const model = profile.model || backend.model || "configured model";
     const provider = backend.provider || "configured backend";
     const scope = currentWorkspaceScope();
     const actionLabel = write ? "write managed tests" : "preview managed changes";
-    return window.confirm(
-        `Use AI for this ${actionLabel} run?\n\nUnitra will send the selected ${scope} source context to ${provider} (${model}). Choose Cancel to continue locally.`
-    );
+    return new Promise(resolve => {
+        showConfirmBanner(
+            `Use AI for this ${actionLabel} run? Unitra will send the selected ${scope} source context to ${provider} (${model}).`,
+            () => resolve(true),
+            () => resolve(false),
+        );
+    });
 }
 
 function canAskForAiRepair() {
@@ -147,15 +166,19 @@ function canAskForAiRepair() {
 }
 
 function confirmAiRepair() {
-    if (!canAskForAiRepair()) return false;
+    if (!canAskForAiRepair()) return Promise.resolve(false);
     const profile = window._workspaceAgentProfile || {};
     const backend = window._workspaceBackend || {};
     const model = profile.model || backend.model || "configured model";
     const provider = backend.provider || "configured backend";
     const scope = currentWorkspaceScope();
-    return window.confirm(
-        `Ask AI for repair suggestions?\n\nUnitra will send focused failure context for the selected ${scope} scope to ${provider} (${model}).`
-    );
+    return new Promise(resolve => {
+        showConfirmBanner(
+            `Ask AI for repair suggestions? Unitra will send focused failure context for the selected ${scope} scope to ${provider} (${model}).`,
+            () => resolve(true),
+            () => resolve(false),
+        );
+    });
 }
 
 function getWorkspaceActionButtons() {
@@ -1306,8 +1329,10 @@ async function applyGuidedStep(action, historyId, stepId, button = null, options
     try {
         const body = { root, history_id: historyId, step_id: stepId, action };
         if (action === "approve") {
-            body.use_ai_generation = options.use_ai_generation === true || options.confirm_ai_generation === true && confirmAiGeneration("generate", true);
-            body.use_ai_repair = options.use_ai_repair === true || options.confirm_ai_repair === true && confirmAiRepair();
+            body.use_ai_generation = options.use_ai_generation === true ||
+                (options.confirm_ai_generation === true && await confirmAiGeneration("generate", true));
+            body.use_ai_repair = options.use_ai_repair === true ||
+                (options.confirm_ai_repair === true && await confirmAiRepair());
         }
         const result = await WorkspaceUi.fetchJson("/workspace/guided/step", {
             method: "POST",
@@ -1360,9 +1385,10 @@ async function runWorkspaceAction(action, write, button = null, options = {}) {
     try {
         const body = { root, scope: currentWorkspaceScope(), write };
         if (body.scope === "folder") body.folder = root;
-        body.use_ai_generation = confirmAiGeneration(action, write);
+        body.use_ai_generation = await confirmAiGeneration(action, write);
         body.use_ai_repair = action === "fix-failures" && (
-            options.use_ai_repair === true || options.confirm_ai_repair === true && confirmAiRepair()
+            options.use_ai_repair === true ||
+            (options.confirm_ai_repair === true && await confirmAiRepair())
         );
 
         const result = await WorkspaceUi.fetchJson(`/workspace/test/${action}`, {
@@ -1420,8 +1446,8 @@ async function runWorkspaceJob(name, button = null) {
             body: JSON.stringify({
                 root,
                 name,
-                use_ai_generation: name !== "run-tests" && confirmAiGeneration("generate", name !== "generate-tests"),
-                use_ai_repair: name === "fix-failed-tests" && canAskForAiRepair() && confirmAiRepair(),
+                use_ai_generation: name !== "run-tests" && await confirmAiGeneration("generate", name !== "generate-tests"),
+                use_ai_repair: name === "fix-failed-tests" && canAskForAiRepair() && await confirmAiRepair(),
             }),
         });
         if (!result.ok) {
