@@ -6,29 +6,52 @@
     <header class="page-header">
         <div class="ui-eyebrow">Preferences</div>
         <h1 class="page-title">Settings</h1>
-        <p class="subtitle">Keys live in <code>.env</code>. Model picks are persisted to <code>.unitra/config.toml</code>.</p>
+        <p class="subtitle">Keys live in <code>.env</code>. Provider and model preferences are persisted to <code>data/settings.json</code>.</p>
     </header>
 
     <div class="workspace-card settings-panel">
         <div class="settings-form">
             <div class="settings-group">
-                <label class="section-label">OpenAI API key</label>
-                <p class="settings-hint hint-toggle">Used when agent fallback is enabled. Stored locally in <code>.env</code>.</p>
+                <label class="section-label" for="provider-select">AI provider</label>
+                <p class="settings-hint hint-toggle">Pick the provider Unitra should use for AI-assisted generation and repair.</p>
+                <select id="provider-select" class="settings-select">
+                    <option value="ollama" {% if current_provider == "ollama" %}selected{% endif %}>Ollama (local)</option>
+                    <option value="openai" {% if current_provider == "openai" %}selected{% endif %}>OpenAI</option>
+                    <option value="openrouter" {% if current_provider == "openrouter" %}selected{% endif %}>OpenRouter</option>
+                </select>
+            </div>
+
+            <div class="settings-group">
+                <label class="section-label" id="provider-key-label">API key</label>
+                <p
+                    class="settings-hint hint-toggle"
+                    id="provider-key-hint"
+                    data-openai-key-set="{{ 'true' if openai_api_key_set else 'false' }}"
+                    data-openrouter-key-set="{{ 'true' if openrouter_api_key_set else 'false' }}"
+                    data-ollama-key-set="{{ 'true' if ollama_api_key_set else 'false' }}"
+                >
+                    Used when agent fallback is enabled. Stored locally in <code>.env</code>. Leave blank to keep the current saved key.
+                </p>
                 <div class="settings-row">
                     <input type="password" id="api-key" class="settings-input"
-                           placeholder="{{ 'Key is set ✓' if api_key_set else 'sk-...' }}">
+                           placeholder="sk-...">
                     <button class="btn-primary" onclick="saveSettings()">Save</button>
                 </div>
             </div>
 
             <div class="settings-group">
                 <label class="section-label">Fallback model</label>
-                <p class="settings-hint hint-toggle">Used when Unitra needs model assistance beyond the local-first flow.</p>
-                <select id="model-select" class="settings-select">
-                    <option value="gpt-5.4-mini" {% if current_model == "gpt-5.4-mini" %}selected{% endif %}>gpt-5.4-mini (default)</option>
-                    <option value="gpt-4o-mini" {% if current_model == "gpt-4o-mini" %}selected{% endif %}>gpt-4o-mini</option>
-                    <option value="gpt-4o" {% if current_model == "gpt-4o" %}selected{% endif %}>gpt-4o</option>
-                </select>
+                <p class="settings-hint hint-toggle" id="model-hint">Used when Unitra needs model assistance beyond the local-first flow.</p>
+                <input
+                    type="text"
+                    id="model-input"
+                    class="settings-input"
+                    value="{{ current_model }}"
+                    list="model-suggestions"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+                <datalist id="model-suggestions"></datalist>
             </div>
 
             <div class="settings-group">
@@ -42,7 +65,7 @@
 
             <div class="settings-group">
                 <label class="section-label">AI behavior</label>
-                <p class="settings-hint hint-toggle">Defaults for new and inherited workspaces. API access still requires a local key in <code>.env</code>.</p>
+                <p class="settings-hint hint-toggle">Defaults for new and inherited workspaces. Remote providers use keys from <code>.env</code>; local Ollama does not require one.</p>
                 <label class="settings-hint" for="ai-generation-select">Generation</label>
                 <select id="ai-generation-select" class="settings-select">
                     <option value="off" {% if current_ai_policy.ai_generation == "off" %}selected{% endif %}>Off</option>
@@ -78,7 +101,7 @@
 
         <div class="settings-info-box" style="margin-top:20px">
             <strong style="color:var(--text);font-size:13px">Local-first</strong>
-            <p style="color:var(--text-muted);font-size:12.5px;margin-top:4px;line-height:1.6">Unitra never sends your source code to remote services unless you've configured an API key and explicitly triggered an AI action.</p>
+            <p style="color:var(--text-muted);font-size:12.5px;margin-top:4px;line-height:1.6">Unitra never sends your source code to remote services unless you've selected a remote provider and explicitly triggered an AI action. Local Ollama stays on your machine.</p>
         </div>
     </div>
 </main>
@@ -87,9 +110,95 @@
 {% block scripts %}
 <script src="/static/scripts/output-actions.js"></script>
 <script>
+const PROVIDER_PRESETS = {
+    ollama: {
+        keyLabel: "Ollama API key",
+        emptyPlaceholder: "No key required",
+        savedPlaceholder: "No key required",
+        keyHint: "Unitra talks to Ollama through its local OpenAI-compatible endpoint. API keys are optional and usually not needed.",
+        modelHint: "Use any local Ollama model tag, for example llama3.2 or qwen2.5-coder:7b.",
+        defaultModel: "llama3.2",
+        suggestions: ["llama3.2", "qwen2.5-coder:7b", "mistral:7b"],
+        keyRequired: false,
+    },
+    openai: {
+        keyLabel: "OpenAI API key",
+        emptyPlaceholder: "sk-...",
+        savedPlaceholder: "OpenAI key is set ✓",
+        keyHint: "Used for OpenAI calls. Stored locally in .env. Leave blank to keep the current saved key.",
+        modelHint: "Use any OpenAI model id, for example gpt-5.4-mini or gpt-4o-mini.",
+        defaultModel: "gpt-5.4-mini",
+        suggestions: ["gpt-5.4-mini", "gpt-4o-mini", "gpt-4o"],
+        keyRequired: true,
+    },
+    openrouter: {
+        keyLabel: "OpenRouter API key",
+        emptyPlaceholder: "sk-or-v1-...",
+        savedPlaceholder: "OpenRouter key is set ✓",
+        keyHint: "Used for OpenRouter's OpenAI-compatible endpoint. Stored locally in .env. Leave blank to keep the current saved key.",
+        modelHint: "Use any OpenRouter model id with a provider prefix, for example openai/gpt-5.2 or anthropic/claude-3.5-sonnet.",
+        defaultModel: "openai/gpt-5.2",
+        suggestions: ["openai/gpt-5.2", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
+        keyRequired: true,
+    },
+};
+
+function currentProviderConfig() {
+    const provider = document.getElementById("provider-select").value || "ollama";
+    return { provider, config: PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ollama };
+}
+
+function providerKeySaved(provider) {
+    const hint = document.getElementById("provider-key-hint");
+    if (!hint) return false;
+    if (provider === "ollama") return hint.dataset.ollamaKeySet === "true";
+    if (provider === "openrouter") return hint.dataset.openrouterKeySet === "true";
+    return hint.dataset.openaiKeySet === "true";
+}
+
+function providerKeyStateLabel(provider) {
+    if (provider === "ollama") return "not required";
+    return providerKeySaved(provider) ? "yes" : "no";
+}
+
+function syncProviderUi(forceDefaultModel = false) {
+    const { provider, config } = currentProviderConfig();
+    const keyLabel = document.getElementById("provider-key-label");
+    const keyHint = document.getElementById("provider-key-hint");
+    const keyInput = document.getElementById("api-key");
+    const modelInput = document.getElementById("model-input");
+    const modelHint = document.getElementById("model-hint");
+    const datalist = document.getElementById("model-suggestions");
+    const previousProvider = modelInput.dataset.provider || provider;
+    const previousDefault = (PROVIDER_PRESETS[previousProvider] || {}).defaultModel;
+
+    if (keyLabel) keyLabel.textContent = config.keyLabel;
+    if (keyHint) keyHint.innerHTML = `${config.keyHint} Saved for this provider: <strong>${providerKeyStateLabel(provider)}</strong>.`;
+    if (keyInput) keyInput.placeholder = providerKeySaved(provider) ? config.savedPlaceholder : config.emptyPlaceholder;
+    if (modelHint) modelHint.textContent = config.modelHint;
+
+    if (datalist) {
+        datalist.innerHTML = "";
+        config.suggestions.forEach((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            datalist.appendChild(option);
+        });
+    }
+
+    if (modelInput) {
+        const shouldReplaceModel = forceDefaultModel || !modelInput.value.trim() || modelInput.value === previousDefault;
+        if (shouldReplaceModel) {
+            modelInput.value = config.defaultModel;
+        }
+        modelInput.dataset.provider = provider;
+    }
+}
+
 function resetSettings() {
     document.getElementById("api-key").value = "";
-    document.getElementById("model-select").value = "gpt-5.4-mini";
+    document.getElementById("provider-select").value = "ollama";
+    document.getElementById("model-input").value = "";
     document.getElementById("show-hints-toggle").checked = true;
     const gen = document.getElementById("ai-generation-select");
     const rep = document.getElementById("ai-repair-select");
@@ -97,11 +206,13 @@ function resetSettings() {
     if (gen) gen.value = "off";
     if (rep) rep.value = "off";
     if (exp) exp.value = "off";
+    syncProviderUi(true);
 }
 
 async function saveSettings() {
+    const provider = document.getElementById("provider-select").value;
     const api_key = document.getElementById("api-key").value.trim();
-    const model = document.getElementById("model-select").value;
+    const model = document.getElementById("model-input").value.trim();
     const show_hints = document.getElementById("show-hints-toggle").checked;
     const ai_policy = {
         ai_generation: document.getElementById("ai-generation-select").value,
@@ -111,13 +222,29 @@ async function saveSettings() {
     const res = await fetch("/settings/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key, model, show_hints, ai_policy })
+        body: JSON.stringify({ provider, api_key, model, show_hints, ai_policy })
     });
     const data = await res.json();
     if (data.ok) {
         document.body.dataset.showHints = data.show_hints ? "true" : "false";
+        const keyHint = document.getElementById("provider-key-hint");
+        if (keyHint) {
+            keyHint.dataset.openaiKeySet = data.openai_api_key_set ? "true" : "false";
+            keyHint.dataset.openrouterKeySet = data.openrouter_api_key_set ? "true" : "false";
+            keyHint.dataset.ollamaKeySet = data.ollama_api_key_set ? "true" : "false";
+        }
+        document.getElementById("api-key").value = "";
+        syncProviderUi(false);
         showToast("Settings saved!");
     }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    const providerSelect = document.getElementById("provider-select");
+    if (providerSelect) {
+        providerSelect.addEventListener("change", () => syncProviderUi(false));
+    }
+    syncProviderUi(false);
+});
 </script>
 {% endblock %}

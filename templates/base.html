@@ -12,6 +12,11 @@
     <script src="/static/scripts/brand-bubble.js"></script>
     <script src="/static/scripts/window-controls.js"></script>
     <script src="/static/scripts/workspace-shared.js"></script>
+    <style>
+        :root {
+{{ ui_css_vars|indent(12, true) }}
+        }
+    </style>
     {% block head_extra %}{% endblock %}
 </head>
 <body data-show-hints="{{ 'true' if show_hints else 'false' }}">
@@ -32,6 +37,7 @@
 
                 <nav class="app-nav" aria-label="Primary">
                     <a href="/" class="app-nav-link {% if active_page == 'home' %}active{% endif %}">Home</a>
+                    <a href="/dashboard" class="app-nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
                     <a href="/quick" class="app-nav-link {% if active_page == 'quick' %}active{% endif %}">Quick</a>
                     <a href="/workspace" class="app-nav-link {% if active_page == 'workspace' %}active{% endif %}">Workspace</a>
                     <a href="/info" class="app-nav-link {% if active_page == 'info' %}active{% endif %}">Info</a>
