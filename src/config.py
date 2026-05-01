@@ -31,10 +31,18 @@ load_dotenv()
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
+def _normalize_provider(value: object) -> str:
+    provider = str(value or "").strip().lower()
+    if provider in {"ollama", "openai", "openrouter"}:
+        return provider
+    return "ollama"
+
+
 @dataclass(frozen=True)
 class AppConfig:
     root_path: str
     flask_port: int
+    ai_provider: str
     ai_model: str
     ai_temperature: float
     ai_max_context: int
@@ -65,11 +73,20 @@ def load_config(root_path: Optional[str] = None) -> AppConfig:
     def read_setting(name: str, default: str) -> str:
         return os.getenv(name, file_values.get(name, default))
 
-    def read_pref(name: str, env_name: str, default: str) -> str:
+    def read_setting_any(names, default: str) -> str:
+        for name in names:
+            value = os.getenv(name, file_values.get(name))
+            if value not in (None, ""):
+                return str(value)
+        return default
+
+    def read_pref(name: str, env_names, default: str) -> str:
         value = settings_values.get(name)
         if value not in (None, ""):
             return str(value)
-        return read_setting(env_name, default)
+        if isinstance(env_names, str):
+            env_names = [env_names]
+        return read_setting_any(env_names, default)
 
     def read_show_hints() -> bool:
         if "show_hints" in settings_values:
@@ -79,7 +96,8 @@ def load_config(root_path: Optional[str] = None) -> AppConfig:
     return AppConfig(
         root_path=base_dir,
         flask_port=int(read_setting("PORT", "5000")),
-        ai_model=read_pref("model", "OPENAI_MODEL", "gpt-5.4-mini"),
+        ai_provider=_normalize_provider(read_pref("provider", "AI_PROVIDER", "ollama")),
+        ai_model=read_pref("model", ["AI_MODEL", "OPENAI_MODEL", "OLLAMA_MODEL"], "llama3.2"),
         ai_temperature=float(read_setting("AI_TEMPERATURE", "0.2")),
         ai_max_context=int(read_setting("AI_MAX_CONTEXT", "8000")),
         pytest_timeout=int(read_setting("PYTEST_TIMEOUT", "30")),
@@ -107,6 +125,7 @@ def _load_settings_json(path: str) -> Dict[str, object]:
 _CONFIG = load_config()
 
 FLASK_PORT = _CONFIG.flask_port
+AI_PROVIDER = _CONFIG.ai_provider
 AI_MODEL = _CONFIG.ai_model
 AI_TEMPERATURE = _CONFIG.ai_temperature
 AI_MAX_CONTEXT = _CONFIG.ai_max_context
