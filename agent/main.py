@@ -4,20 +4,31 @@ import logging
 import os
 import re
 import sys
+from typing import Dict, Tuple
 
 if __package__ in (None, ""):
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if PROJECT_ROOT not in sys.path:
         sys.path.insert(0, PROJECT_ROOT)
 
-from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import ChatOpenAI
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional in constrained test environments
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_openai import ChatOpenAI
+except ImportError:  # pragma: no cover - optional in constrained test environments
+    ChatPromptTemplate = None
+    StrOutputParser = None
+    ChatOpenAI = None
 
 from src.parser import parse_functions, parse_classes
 from src.generator import generate_test_module
-from src.config import AI_MODEL, AI_TEMPERATURE, AI_MAX_CONTEXT
+from src.config import AI_MODEL, AI_MAX_CONTEXT, AI_PROVIDER, AI_TEMPERATURE
 
 load_dotenv()
 
@@ -48,16 +59,89 @@ Do not rewrite files. Suggest focused, reviewable changes from the provided fail
 _chain_cache = {}
 
 
-def _get_chain(model: str = "", temperature: float = None, api_key: str = "", system_prompt: str = SYSTEM_PROMPT):
-    api_key = api_key or os.getenv("API_KEY")
-    if not api_key:
-        raise EnvironmentError("API_KEY not found in .env")
-    effective_model = model or os.getenv("OPENAI_MODEL") or AI_MODEL
+def _normalize_provider(provider: str = "") -> str:
+    value = (provider or "").strip().lower()
+    if value in {"ollama", "openai", "openrouter"}:
+        return value
+    return "ollama"
+
+
+def _resolve_provider_config(
+    provider: str = "",
+    api_key: str = "",
+    base_url: str = "",
+) -> Tuple[str, str, str, Dict[str, str], str]:
+    resolved_provider = _normalize_provider(provider or os.getenv("AI_PROVIDER") or AI_PROVIDER)
+    if resolved_provider == "ollama":
+        return (
+            resolved_provider,
+            api_key or os.getenv("OLLAMA_API_KEY") or "ollama",
+            base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1/"),
+            {},
+            "OLLAMA_API_KEY",
+        )
+    if resolved_provider == "openrouter":
+        resolved_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+        if not resolved_key:
+            raise EnvironmentError("OPENROUTER_API_KEY not found in .env")
+        return (
+            resolved_provider,
+            resolved_key,
+            base_url or os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            {"X-Title": os.getenv("OPENROUTER_APP_NAME", "Unitra")},
+            "OPENROUTER_API_KEY",
+        )
+
+    resolved_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY", "")
+    if not resolved_key:
+        raise EnvironmentError("OPENAI_API_KEY not found in .env")
+    return (
+        resolved_provider,
+        resolved_key,
+        base_url or os.getenv("OPENAI_BASE_URL", ""),
+        {},
+        "OPENAI_API_KEY",
+    )
+
+
+def _get_chain(
+    provider: str = "",
+    model: str = "",
+    temperature: float = None,
+    api_key: str = "",
+    base_url: str = "",
+    system_prompt: str = SYSTEM_PROMPT,
+):
+    if ChatOpenAI is None or ChatPromptTemplate is None or StrOutputParser is None:
+        raise EnvironmentError("langchain_openai is not installed")
+    resolved_provider, resolved_key, resolved_base_url, default_headers, _ = _resolve_provider_config(
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
+    )
+    effective_model = model or os.getenv("AI_MODEL") or os.getenv("OLLAMA_MODEL") or os.getenv("OPENAI_MODEL") or AI_MODEL
     effective_temperature = AI_TEMPERATURE if temperature is None else temperature
-    cache_key = (api_key, effective_model, effective_temperature, system_prompt)
+    cache_key = (
+        resolved_provider,
+        resolved_key,
+        effective_model,
+        effective_temperature,
+        resolved_base_url,
+        tuple(sorted(default_headers.items())),
+        system_prompt,
+    )
     if cache_key in _chain_cache:
         return _chain_cache[cache_key]
-    llm = ChatOpenAI(model=effective_model, temperature=effective_temperature, api_key=api_key)
+    llm_kwargs = {
+        "model": effective_model,
+        "temperature": effective_temperature,
+        "api_key": resolved_key,
+    }
+    if resolved_base_url:
+        llm_kwargs["base_url"] = resolved_base_url
+    if default_headers:
+        llm_kwargs["default_headers"] = default_headers
+    llm = ChatOpenAI(**llm_kwargs)
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
         ("human", "{context}"),
@@ -67,7 +151,14 @@ def _get_chain(model: str = "", temperature: float = None, api_key: str = "", sy
     return chain
 
 
-def run_agent(source_code: str, model: str = "", temperature: float = None, max_context: int = None) -> str:
+def run_agent(
+    source_code: str,
+    provider: str = "",
+    model: str = "",
+    temperature: float = None,
+    max_context: int = None,
+    base_url: str = "",
+) -> str:
     """Parse code locally, then improve tests with a single LLM call."""
     functions = parse_functions(source_code)
     classes = parse_classes(source_code)
@@ -100,7 +191,12 @@ def run_agent(source_code: str, model: str = "", temperature: float = None, max_
     if len(context) > effective_max_context:
         context = context[:effective_max_context] + "\n# ... (truncated)"
 
-    output: str = _get_chain(model=model, temperature=temperature).invoke({"context": context})
+    output: str = _get_chain(
+        provider=provider,
+        model=model,
+        temperature=temperature,
+        base_url=base_url,
+    ).invoke({"context": context})
     output = re.sub(r"^```(?:\w+)?\n(.*)\n```$", r"\1", output.strip(), flags=re.DOTALL)
     output = output.strip()
     try:
@@ -110,20 +206,36 @@ def run_agent(source_code: str, model: str = "", temperature: float = None, max_
     return output
 
 
-def run_repair_agent(context: dict, model: str = "", temperature: float = None, max_context: int = None) -> str:
+def run_repair_agent(
+    context: dict,
+    provider: str = "",
+    model: str = "",
+    temperature: float = None,
+    max_context: int = None,
+    base_url: str = "",
+) -> str:
     payload = json.dumps(context, ensure_ascii=False, indent=2)
     effective_max_context = AI_MAX_CONTEXT if max_context is None else max_context
     if len(payload) > effective_max_context:
         payload = payload[:effective_max_context] + "\n# ... (truncated)"
     output: str = _get_chain(
+        provider=provider,
         model=model,
         temperature=temperature,
+        base_url=base_url,
         system_prompt=REPAIR_SYSTEM_PROMPT,
     ).invoke({"context": payload})
     return re.sub(r"^```(?:json)?\n(.*)\n```$", r"\1", output.strip(), flags=re.DOTALL).strip()
 
 
-def stream_agent(source_code: str, model: str = "", temperature: float = None, max_context: int = None):
+def stream_agent(
+    source_code: str,
+    provider: str = "",
+    model: str = "",
+    temperature: float = None,
+    max_context: int = None,
+    base_url: str = "",
+):
     """Like run_agent but yields string tokens for SSE streaming."""
     functions = parse_functions(source_code)
     classes = parse_classes(source_code)
@@ -157,7 +269,12 @@ def stream_agent(source_code: str, model: str = "", temperature: float = None, m
     if len(context) > effective_max_context:
         context = context[:effective_max_context] + "\n# ... (truncated)"
 
-    for chunk in _get_chain(model=model, temperature=temperature).stream({"context": context}):
+    for chunk in _get_chain(
+        provider=provider,
+        model=model,
+        temperature=temperature,
+        base_url=base_url,
+    ).stream({"context": context}):
         if isinstance(chunk, str):
             yield chunk
 
