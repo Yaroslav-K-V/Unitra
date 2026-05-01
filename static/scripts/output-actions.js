@@ -160,6 +160,7 @@ async function runTests() {
 
     btn.textContent = "Running...";
     btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
     clearRunResult(resultBox);
     setRunResultClass(resultBox);
     setQuickRunState("running");
@@ -197,7 +198,8 @@ async function runTests() {
         setQuickRunState("error");
     } finally {
         btn.disabled = false;
-        btn.textContent = "Run Tests";
+        btn.removeAttribute("aria-busy");
+        btn.textContent = "Run tests";
     }
 }
 

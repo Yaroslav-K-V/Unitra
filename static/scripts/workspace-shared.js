@@ -95,6 +95,7 @@ window.WorkspaceUi = window.WorkspaceUi || (() => {
                 button.disabled = true;
                 if (label) button.textContent = label;
                 button.dataset.busy = "true";
+                button.setAttribute("aria-busy", "true");
                 return;
             }
 
@@ -109,6 +110,7 @@ window.WorkspaceUi = window.WorkspaceUi || (() => {
                 button.disabled = false;
             }
             delete button.dataset.busy;
+            button.removeAttribute("aria-busy");
         });
     }
 
