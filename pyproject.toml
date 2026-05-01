@@ -18,8 +18,28 @@ dependencies = [
     "textual==0.62.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=4.0.0",
+    "ruff>=0.11.0",
+]
+
 [project.scripts]
 unitra = "src.cli:main"
 
+[project.entry-points."unitra.generators"]
+vanilla = "src.generator_plugins.builtin:VanillaPythonGenerator"
+web_api = "src.generator_plugins.builtin:FastApiFlaskGenerator"
+django = "src.generator_plugins.builtin:DjangoGenerator"
+schema_models = "src.generator_plugins.builtin:PydanticDataclassGenerator"
+data_science = "src.generator_plugins.builtin:DataScienceGenerator"
+
 [tool.setuptools]
-packages = ["src", "src.application", "src.infrastructure", "src.tui", "src.tui.screens", "src.tui.widgets", "agent", "routes"]
+packages = ["src", "src.application", "src.generator_plugins", "src.infrastructure", "src.tui", "src.tui.screens", "src.tui.widgets", "src.ui", "agent", "routes"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

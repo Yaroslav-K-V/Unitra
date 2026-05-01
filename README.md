@@ -1,139 +1,228 @@
 # Unitra
 
-Unitra is a local-first tool for generating and running Python tests.
+Unitra is a local-first Python test tooling app with one shared backend and three frontends:
 
-It has a desktop UI for day-to-day work, a CLI for automation, and a terminal console for keyboard-first workflows.
+- Desktop app with `pywebview + Flask`
+- CLI for automation and CI-friendly workflows
+- Keyboard-first TUI built with Textual
 
-## What It Does
+Unitra starts with AST-based pytest generation and local subprocess test execution. AI is optional and now defaults to local Ollama instead of a remote provider.
 
-- Generates pytest drafts from Python functions and classes.
-- Works with pasted code, single files, folders, or full repositories.
-- Shows planned workspace changes before writing files.
-- Runs tests locally with pytest.
-- Keeps workspace config, jobs, and run history in `.unitra`.
-- Can use AI as an optional fallback for harder generation or failure-repair cases.
+## Quick Start In 30 Seconds
+
+```bash
+git clone https://github.com/yourname/unitra.git
+cd unitra
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+ollama pull llama3.2
+cp .env.example .env
+unitra doctor
+python app.py
+```
+
+If you prefer the CLI first:
+
+```bash
+pip install -e .
+unitra workspace init --root .
+unitra test generate --root . --repo --dry-run
+unitra test run --root . -q
+```
+
+## Why Unitra
+
+- Local-first by default: source files stay on your machine
+- Shared backend architecture across Desktop, CLI, and TUI
+- Safe managed test writing with `.unitra/` workspace metadata
+- AST generator works without AI
+- Optional AI fallback for generation and failure repair
+- Workspace-aware jobs, run history, and guided flows
 
 ## Main Modes
 
 ### Quick
 
-For snippets and one-off files. Paste or open Python code, generate tests, then copy, save, or run them.
+Paste a snippet, open a file, generate tests, then copy or run them.
 
 ### Workspace
 
-For real repositories. Open a folder, preview managed test changes, write tests, run jobs, and inspect recent runs.
+Initialize a repository, preview managed changes, write tests, run jobs, and inspect run history.
 
 ### CLI
 
-For scripts, CI, and repeatable terminal workflows.
+Use Unitra in scripts, local automation, and pre-commit hooks.
 
 ### Console
 
-An interactive terminal UI over the same workspace logic.
-
-## Local-First Behavior
-
-- Basic generation works without an API key.
-- Workspace files stay in the repo under `.unitra`.
-- Settings and API keys stay in `.env`.
-- AI is not required for the normal local generation path.
-
-## AI / LangChain
-
-Unitra uses local AST parsing for the default generator.
-
-LangChain is used only for optional AI-assisted paths. Workspace agent profiles define the model, token budget, enabled roles, and failure behavior. For repair flows, Unitra can build a focused context from pytest output, source snippets, generated tests, and recommendations.
+Navigate the same workspace logic through a keyboard-first terminal UI.
 
 ## Install
 
 ```bash
-git clone https://github.com/yourname/unitra.git
-cd unitra
-python -m venv .venv
-```
-
-Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-macOS / Linux:
-
-```bash
+python3 -m venv .venv
 source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
 ```
 
-Linux desktop dependencies, if needed:
+Editable install for the CLI:
+
+```bash
+pip install -e .
+```
+
+Linux desktop dependencies, when needed:
 
 ```bash
 sudo apt-get install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
 ```
 
-## Configure AI Fallback
+## AI Backends
 
-AI is optional. For local-only generation, skip this step.
+### Default: local Ollama
+
+Unitra uses Ollama as the default AI backend.
 
 ```bash
-cp .env.example .env
+ollama pull llama3.2
+unitra doctor
 ```
+
+Default `.env`:
 
 ```env
-API_KEY=your_openai_key_here
-OPENAI_MODEL=gpt-5.4-mini
+AI_PROVIDER=ollama
+AI_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434/v1/
 ```
 
-## Run
+### Optional remote providers
 
-Desktop app:
+You can still switch to OpenAI or OpenRouter in Settings or through the CLI:
 
 ```bash
-python app.py
+unitra settings set --provider openai --model gpt-4o-mini --api-key "$OPENAI_API_KEY"
+unitra settings set --provider openrouter --model openai/gpt-5.2 --api-key "$OPENROUTER_API_KEY"
 ```
 
-CLI:
+## Workspace Configuration
+
+Each initialized repo gets `.unitra/unitra.toml`.
+
+Example:
+
+```toml
+[workspace]
+root_path = "/path/to/repo"
+source_include = ["**/*.py"]
+source_exclude = ["tests/**", ".venv/**", "venv/**"]
+
+[output]
+test_root = "tests/unit"
+test_path_strategy = "mirror"
+naming_strategy = "test_{module}.py"
+
+[run]
+preferred_pytest_args = ["-q"]
+
+[agent]
+selected_profile = "default"
+
+[ai_policy]
+inherit = true
+ai_generation = "off"
+ai_repair = "ask"
+ai_explain = "ask"
+
+[ai_backend]
+provider = "ollama"
+model = "llama3.2"
+base_url = "http://localhost:11434/v1/"
+```
+
+That backend block is what workspace AI generation and repair flows use.
+
+## Useful Commands
+
+Doctor and validation:
 
 ```bash
-pip install -e .
-unitra --help
+unitra doctor
+unitra check
+unitra workspace validate --root .
 ```
 
-Examples:
+Generate and run:
+
+```bash
+unitra generate --code "def add(a, b): return a + b"
+unitra generate-ai --code "def divide(a, b): return a / b"
+unitra run-tests --test-code "def test_smoke(): assert True"
+```
+
+Workspace flows:
 
 ```bash
 unitra workspace init --root /path/to/repo
 unitra workspace status --root /path/to/repo --json
 unitra test generate --root /path/to/repo --repo --dry-run --json
-unitra test run --root /path/to/repo -q
+unitra test update --root /path/to/repo --changed --write
+unitra test fix-failures --root /path/to/repo --repo --use-ai --use-ai-repair
 unitra runs list --root /path/to/repo
 unitra console --root /path/to/repo
 ```
 
+Settings:
+
+```bash
+unitra settings show
+unitra settings set --provider ollama --model qwen2.5-coder:7b
+unitra settings set --provider openai --model gpt-4o-mini --api-key "$OPENAI_API_KEY"
+```
+
+## Pre-Commit
+
+Unitra ships with pre-commit hooks for Ruff and workspace validation.
+
+```bash
+pip install -e ".[dev]"
+pre-commit install
+pre-commit run --all-files
+```
+
+The default config runs:
+
+- `ruff-check`
+- `ruff-format`
+- `unitra check`
+
 ## Project Layout
 
 ```text
-app.py          # desktop app entrypoint
-routes/         # Flask pages and API routes
-src/            # core app, CLI, TUI, services, infrastructure
-agent/          # AI runner entrypoint
-static/         # CSS, JavaScript, assets
-templates/      # Jinja templates
-tests/          # test suite
+app.py          desktop app entrypoint
+routes/         Flask pages and API routes
+src/            core app, CLI, TUI, services, infrastructure
+agent/          optional AI runner entrypoint
+static/         CSS, JavaScript, assets
+templates/      Jinja templates
+tests/          automated tests
 ```
 
-## Tests
+## Development
+
+Run tests:
 
 ```bash
-pytest tests/
+python3 -m pytest tests/
 ```
 
-CI runs tests in shards for faster pull request feedback.
+Run a focused subset:
+
+```bash
+python3 -m pytest tests/test_services.py tests/test_cli.py tests/test_workspace_tooling.py -q
+```
 
 ## License
 
