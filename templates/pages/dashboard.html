@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}Unitra — Dashboard{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="/static/dashboard.css">
+{% endblock %}
+
+{% block content %}
+<main class="dashboard-screen">
+    <header class="page-header dashboard-header">
+        <div>
+            <div class="ui-eyebrow">Command center</div>
+            <h1 id="desktop-page-title" class="page-title">Home</h1>
+            <p id="desktop-page-subtitle" class="subtitle">Live workspace metrics, backend health, recent jobs, and run history.</p>
+        </div>
+        <div class="dashboard-header-actions">
+            <span id="desktop-root-badge" class="workspace-pill workspace-pill-muted">No workspace</span>
+            <button class="btn-primary" type="button" id="desktop-open-root">Open workspace</button>
+            <a href="/workspace" class="btn-secondary">Workspace</a>
+            <a href="/settings" class="btn-ghost">Settings</a>
+        </div>
+    </header>
+
+    <div id="desktop-feedback" class="workspace-feedback" hidden></div>
+
+    <section class="workspace-card dashboard-progress-card">
+        <div class="workspace-card-header">
+            <div>
+                <div class="workspace-step-label">Active task</div>
+                <h3>Progress</h3>
+            </div>
+            <span id="desktop-task-stage" class="workspace-pill workspace-pill-muted">Idle</span>
+        </div>
+        <div class="dashboard-progress-rail" aria-hidden="true">
+            <div id="desktop-progress-fill" class="dashboard-progress-fill"></div>
+        </div>
+        <div class="dashboard-progress-meta">
+            <strong id="desktop-task-label">No active task</strong>
+            <span id="desktop-task-message">Open a workspace and run Preview, Write, or Run from the panels below.</span>
+        </div>
+    </section>
+
+    <div class="tab-bar dashboard-tab-bar" aria-label="Dashboard sections">
+        <button class="tab-btn active" data-desktop-view="home" type="button">Home</button>
+        <button class="tab-btn" data-desktop-view="generate" type="button">Generate</button>
+        <button class="tab-btn" data-desktop-view="workspace" type="button">Workspace</button>
+        <button class="tab-btn" data-desktop-view="settings" type="button">Settings</button>
+        <button class="tab-btn" data-desktop-view="history" type="button">History</button>
+    </div>
+
+    <section class="dashboard-view active" data-desktop-panel="home">
+        <div class="dashboard-metric-grid">
+            <article class="workspace-card dashboard-metric-card">
+                <div class="workspace-step-label">Generated</div>
+                <h3 id="metric-generated-tests">0</h3>
+                <p>Managed test plans from recent runs.</p>
+            </article>
+            <article class="workspace-card dashboard-metric-card">
+                <div class="workspace-step-label">Coverage</div>
+                <h3 id="metric-latest-coverage">—</h3>
+                <p>Latest recorded coverage in workspace history.</p>
+            </article>
+            <article class="workspace-card dashboard-metric-card">
+                <div class="workspace-step-label">Performance</div>
+                <h3 id="metric-avg-duration">0 ms</h3>
+                <p>Average runtime for recent generation and run jobs.</p>
+            </article>
+            <article class="workspace-card dashboard-metric-card">
+                <div class="workspace-step-label">Cache</div>
+                <h3 id="metric-cache-hits">0</h3>
+                <p>Hits served from `.unitra/cache`.</p>
+            </article>
+        </div>
+
+        <div class="dashboard-split-grid">
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Backend</div>
+                        <h3>AI / Ollama status</h3>
+                    </div>
+                </div>
+                <div id="desktop-backend-card" class="dashboard-panel-state">Open a workspace to inspect the active backend.</div>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Generator quality</div>
+                        <h3>Latest generator breakdown</h3>
+                    </div>
+                </div>
+                <div id="desktop-generator-breakdown" class="dashboard-panel-state">No generator runs yet.</div>
+            </article>
+        </div>
+
+        <div class="dashboard-split-grid">
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Jobs</div>
+                        <h3>Workspace jobs</h3>
+                    </div>
+                </div>
+                <div id="desktop-jobs-table" class="dashboard-panel-state">Open a workspace to load jobs.</div>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">History</div>
+                        <h3>Recent runs</h3>
+                    </div>
+                </div>
+                <div id="desktop-runs-table" class="dashboard-panel-state">No runs yet.</div>
+            </article>
+        </div>
+    </section>
+
+    <section class="dashboard-view" data-desktop-panel="generate">
+        <div class="dashboard-split-grid">
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Generate</div>
+                        <h3>Managed generation controls</h3>
+                    </div>
+                </div>
+                <div class="dashboard-form-grid">
+                    <label class="dashboard-field">
+                        <span>Scope</span>
+                        <select id="desktop-scope">
+                            <option value="repo">Whole repo</option>
+                            <option value="changed">Changed files</option>
+                            <option value="folder">Folder</option>
+                        </select>
+                    </label>
+                    <label class="dashboard-field">
+                        <span>Folder override</span>
+                        <input id="desktop-folder" type="text" placeholder="Optional folder path">
+                    </label>
+                </div>
+                <div class="dashboard-toggle-row">
+                    <label class="workspace-scope-option"><input id="desktop-use-ai" type="checkbox"> Use AI / Ollama when policy allows</label>
+                    <label class="workspace-scope-option"><input id="desktop-use-ai-repair" type="checkbox"> Ask AI for repair suggestions</label>
+                </div>
+                <div class="dashboard-action-stack">
+                    <button class="btn-primary" type="button" id="desktop-preview-btn">Preview</button>
+                    <button class="btn-secondary" type="button" id="desktop-write-btn">Write</button>
+                    <button class="btn-ghost" type="button" id="desktop-run-btn">Run tests</button>
+                    <button class="btn-ghost" type="button" id="desktop-fix-btn">Fix failures</button>
+                </div>
+                <p class="workspace-help">Preview stays dry-run and shows the diff first. Write and Fix update only managed test files.</p>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Result</div>
+                        <h3>Latest task stats</h3>
+                    </div>
+                </div>
+                <div id="desktop-run-summary" class="dashboard-panel-state">Run a task to see generator, quality, cache, and timing stats.</div>
+            </article>
+        </div>
+
+        <article class="workspace-card">
+            <div class="workspace-card-header">
+                <div>
+                    <div class="workspace-step-label">Diff preview</div>
+                    <h3>Managed file changes</h3>
+                </div>
+            </div>
+            <div id="desktop-diff-preview" class="dashboard-panel-state">No diff yet. Start with Preview.</div>
+        </article>
+    </section>
+
+    <section class="dashboard-view" data-desktop-panel="workspace">
+        <div class="dashboard-split-grid">
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Workspace</div>
+                        <h3>Health snapshot</h3>
+                    </div>
+                </div>
+                <div id="desktop-workspace-summary" class="dashboard-panel-state">Open a workspace to load the summary.</div>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Agent</div>
+                        <h3>Current profile</h3>
+                    </div>
+                </div>
+                <div id="desktop-agent-summary" class="dashboard-panel-state">No active workspace.</div>
+            </article>
+        </div>
+
+        <article class="workspace-card">
+            <div class="workspace-card-header">
+                <div>
+                    <div class="workspace-step-label">Live</div>
+                    <h3>Jobs and run history</h3>
+                </div>
+            </div>
+            <div id="desktop-live-refresh-note" class="workspace-help">Auto-refresh every 2.5 seconds while a workspace is open.</div>
+            <div class="dashboard-split-grid">
+                <div id="desktop-workspace-jobs" class="dashboard-panel-state">No jobs loaded yet.</div>
+                <div id="desktop-workspace-history" class="dashboard-panel-state">No run history loaded yet.</div>
+            </div>
+        </article>
+    </section>
+
+    <section class="dashboard-view" data-desktop-panel="settings">
+        <article class="workspace-card">
+            <div class="workspace-card-header">
+                <div>
+                    <div class="workspace-step-label">Settings</div>
+                    <h3>AI backend</h3>
+                </div>
+            </div>
+            <div class="dashboard-form-grid">
+                <label class="dashboard-field">
+                    <span>Provider</span>
+                    <select id="desktop-settings-provider">
+                        <option value="ollama">Ollama</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </label>
+                <label class="dashboard-field">
+                    <span>Model</span>
+                    <input id="desktop-settings-model" type="text" placeholder="llama3.2 / gpt-5.4-mini / openrouter model">
+                </label>
+                <label class="dashboard-field dashboard-field-wide">
+                    <span>API key</span>
+                    <input id="desktop-settings-api-key" type="password" placeholder="Leave blank to keep the current key">
+                </label>
+            </div>
+            <div class="dashboard-toggle-row">
+                <label class="workspace-scope-option"><input id="desktop-show-hints" type="checkbox"> Show helper hints in secondary surfaces</label>
+            </div>
+            <div class="dashboard-form-grid">
+                <label class="dashboard-field">
+                    <span>AI generation</span>
+                    <select id="desktop-ai-generation">
+                        <option value="off">Off</option>
+                        <option value="ask">Ask</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </label>
+                <label class="dashboard-field">
+                    <span>AI repair</span>
+                    <select id="desktop-ai-repair">
+                        <option value="off">Off</option>
+                        <option value="ask">Ask</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </label>
+                <label class="dashboard-field">
+                    <span>AI explain</span>
+                    <select id="desktop-ai-explain">
+                        <option value="off">Off</option>
+                        <option value="ask">Ask</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </label>
+            </div>
+            <div class="dashboard-action-stack">
+                <button class="btn-primary" type="button" id="desktop-save-settings">Save settings</button>
+            </div>
+        </article>
+    </section>
+
+    <section class="dashboard-view" data-desktop-panel="history">
+        <div class="dashboard-split-grid">
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">History</div>
+                        <h3>Recent executions</h3>
+                    </div>
+                </div>
+                <div id="desktop-history-list" class="dashboard-panel-state">Open a workspace to load history.</div>
+            </article>
+
+            <article class="workspace-card">
+                <div class="workspace-card-header">
+                    <div>
+                        <div class="workspace-step-label">Details</div>
+                        <h3>Selected run</h3>
+                    </div>
+                </div>
+                <div id="desktop-history-detail" class="dashboard-panel-state">Select a run to inspect coverage, output, and generator stats.</div>
+            </article>
+        </div>
+    </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/scripts/output-actions.js"></script>
+<script src="/static/desktop.js"></script>
+{% endblock %}
