@@ -23,7 +23,9 @@ function switchWorkspaceTab(name) {
         panel.classList.toggle("active", panel.dataset.workspaceTab === name);
     });
     document.querySelectorAll(".workspace-tab-bar .tab-btn").forEach(button => {
-        button.classList.toggle("active", button.dataset.tab === name);
+        const isActive = button.dataset.tab === name;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
     });
     sessionStorage.setItem(WORKSPACE_STORAGE_KEYS.tab, name);
 }

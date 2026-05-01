@@ -12,12 +12,12 @@
     <div id="workspace-feedback" class="workspace-feedback"
          role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
-    <div class="tab-bar workspace-tab-bar">
-        <button class="tab-btn active" data-tab="overview" onclick="switchWorkspaceTab('overview')">Overview</button>
-        <button class="tab-btn" data-tab="review" onclick="switchWorkspaceTab('review')">Review</button>
-        <button class="tab-btn" data-tab="runs" onclick="switchWorkspaceTab('runs')">Runs</button>
-        <button class="tab-btn" data-tab="jobs" onclick="switchWorkspaceTab('jobs')">Jobs</button>
-        <button class="tab-btn" data-tab="agents" onclick="switchWorkspaceTab('agents')">Agents</button>
+    <div class="tab-bar workspace-tab-bar" role="tablist" aria-label="Workspace sections">
+        <button class="tab-btn active" role="tab" aria-selected="true"  data-tab="overview" onclick="switchWorkspaceTab('overview')">Overview</button>
+        <button class="tab-btn"        role="tab" aria-selected="false" data-tab="review"   onclick="switchWorkspaceTab('review')">Review</button>
+        <button class="tab-btn"        role="tab" aria-selected="false" data-tab="runs"     onclick="switchWorkspaceTab('runs')">Runs</button>
+        <button class="tab-btn"        role="tab" aria-selected="false" data-tab="jobs"     onclick="switchWorkspaceTab('jobs')">Jobs</button>
+        <button class="tab-btn"        role="tab" aria-selected="false" data-tab="agents"   onclick="switchWorkspaceTab('agents')">Agents</button>
     </div>
 
     <div class="workspace-tab active" data-workspace-tab="overview">
