@@ -116,7 +116,7 @@ async function generate() {
         setQuickState("draft-ready");
         switchTab("output");
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = orig || "Generate Tests"; }
+        if (btn) { btn.disabled = false; btn.textContent = orig || "Generate draft"; }
     }
 }
 
