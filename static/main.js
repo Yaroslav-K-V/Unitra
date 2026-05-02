@@ -8,6 +8,11 @@ function setQuickState(state) {
     if (workbench) workbench.dataset.quickState = state;
 }
 
+function _debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const textarea = document.getElementById("code");
 
@@ -38,13 +43,22 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.ctrlKey && e.key === "s")     { e.preventDefault(); saveOutput(); }
     });
 
+    // Auto-save draft to localStorage
+    textarea.addEventListener("input", _debounce(() => {
+        localStorage.setItem("unitra_quick_draft", textarea.value);
+    }, 500));
+
     // Preload code if navigated from recent files
     const preload = sessionStorage.getItem("preload_code");
     if (preload) {
-        document.getElementById("code").value = preload;
+        textarea.value = preload;
         sessionStorage.removeItem("preload_code");
         sessionStorage.removeItem("preload_path");
         generate();
+    } else {
+        // Restore last draft if textarea is empty
+        const draft = localStorage.getItem("unitra_quick_draft");
+        if (draft && !textarea.value) textarea.value = draft;
     }
 });
 
@@ -110,7 +124,17 @@ async function generate() {
         }
 
         output.classList.remove("error");
-        output.textContent = data.test_code;
+        // Syntax highlight if hljs is loaded, otherwise plain text
+        if (typeof hljs !== "undefined") {
+            output.innerHTML = "";
+            const codeEl = document.createElement("code");
+            codeEl.className = "language-python";
+            codeEl.textContent = data.test_code;
+            output.appendChild(codeEl);
+            hljs.highlightElement(codeEl);
+        } else {
+            output.textContent = data.test_code;
+        }
         meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
         setQuickState("draft-ready");

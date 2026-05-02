@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <link rel="icon" href="/favicon.ico">
     <script src="/static/scripts/theme.js"></script>
     <script src="/static/scripts/brand-bubble.js"></script>
@@ -65,8 +66,35 @@
                 {% block content %}{% endblock %}
             </div>
         </div>
+
+        <footer class="app-statusbar" aria-label="Status bar">
+            <span class="statusbar-item">v{{ app_version }}</span>
+            <span class="statusbar-sep">·</span>
+            <span class="statusbar-item">AI: {{ ai_provider }}</span>
+            <span class="statusbar-spacer"></span>
+            <button class="statusbar-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)">?</button>
+        </footer>
+    </div>
+
+    <div id="shortcuts-overlay" class="shortcuts-overlay" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div class="shortcuts-backdrop" onclick="toggleShortcuts()"></div>
+        <div class="shortcuts-panel">
+            <div class="shortcuts-header">
+                <h2 class="shortcuts-title">Keyboard shortcuts</h2>
+                <button class="shortcuts-close btn-ghost" onclick="toggleShortcuts()" aria-label="Close">✕</button>
+            </div>
+            <dl class="shortcuts-list">
+                <div class="shortcuts-row"><dt>Ctrl + Enter</dt><dd>Generate draft</dd></div>
+                <div class="shortcuts-row"><dt>Ctrl + S</dt><dd>Save output as .py</dd></div>
+                <div class="shortcuts-row"><dt>?</dt><dd>Show this overlay</dd></div>
+                <div class="shortcuts-row"><dt>Esc</dt><dd>Close overlay</dd></div>
+            </dl>
+        </div>
     </div>
 
     {% block scripts %}{% endblock %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js" defer></script>
+    <script src="/static/scripts/shortcuts.js" defer></script>
 </body>
 </html>

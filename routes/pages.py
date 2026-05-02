@@ -5,6 +5,12 @@ from src.ui.styles import web_css_variables
 
 pages_bp = Blueprint("pages", __name__)
 
+try:
+    from importlib.metadata import version as _pkg_version
+    _APP_VERSION = _pkg_version("unitra")
+except Exception:
+    _APP_VERSION = "0.1.0"
+
 
 def _page_context(active_page: str, **extra):
     config = load_config(root_path=current_app.root_path)
@@ -12,6 +18,8 @@ def _page_context(active_page: str, **extra):
         "active_page": active_page,
         "show_hints": config.show_hints,
         "ui_css_vars": web_css_variables(),
+        "app_version": _APP_VERSION,
+        "ai_provider": config.ai_provider,
     }
     context.update(extra)
     return context

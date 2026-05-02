@@ -31,3 +31,6 @@ build/
 dist/
 .eggs/
 *.egg-info/
+
+# Local skill references (Claude Code)
+skills/
