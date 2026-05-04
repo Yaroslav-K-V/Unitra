@@ -2146,6 +2146,35 @@ main {
     }
 }
 
+/* ── Workspace backend edit panel ───────────────────────────────── */
+.workspace-backend-edit-panel {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-inner);
+}
+.workspace-backend-edit-toggle {
+    font-size: 12.5px;
+}
+.workspace-backend-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 16px;
+    background: var(--btn-secondary-bg);
+    border: 1px solid var(--border-inner);
+    border-radius: var(--r-md);
+}
+.workspace-backend-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.workspace-backend-edit-form .settings-input,
+.workspace-backend-edit-form .settings-select {
+    font-size: 13px;
+}
+
 /* ── Status bar ──────────────────────────────────────────────────── */
 .app-statusbar {
     display: flex;

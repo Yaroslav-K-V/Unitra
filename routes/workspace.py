@@ -281,6 +281,23 @@ def workspace_ai_policy():
     return jsonify(payload)
 
 
+@workspace_bp.route("/workspace/ai-backend", methods=["POST"])
+def workspace_ai_backend_save():
+    body = request.get_json()
+    root = body.get("root", ".")
+    try:
+        container = _container_for_root(root)
+        payload = container.workspace.save_ai_backend(
+            provider=body.get("provider", "ollama"),
+            model=body.get("model", ""),
+            base_url=body.get("base_url", ""),
+        )
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    _invalidate_workspace_cache(root)
+    return jsonify(payload)
+
+
 @workspace_bp.route("/workspace/ai-policy", methods=["POST"])
 def workspace_ai_policy_save():
     body = request.get_json()

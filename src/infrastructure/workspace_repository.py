@@ -109,6 +109,24 @@ class WorkspaceRepository:
         ))
         return ai_policy
 
+    def save_ai_backend(self, ai_backend: AiBackendConfig) -> AiBackendConfig:
+        config = self.load_config()
+        self.save_config(WorkspaceConfig(
+            root_path=config.root_path,
+            source_include=config.source_include,
+            source_exclude=config.source_exclude,
+            test_root=config.test_root,
+            test_path_strategy=config.test_path_strategy,
+            naming_strategy=config.naming_strategy,
+            preferred_pytest_args=config.preferred_pytest_args,
+            selected_agent_profile=config.selected_agent_profile,
+            ai_policy=config.ai_policy,
+            ai_backend=ai_backend,
+            custom_generators=config.custom_generators,
+            cache_dir=config.cache_dir,
+        ))
+        return ai_backend
+
     @staticmethod
     def _normalize_provider(value: object) -> str:
         provider = str(value or "").strip().lower()

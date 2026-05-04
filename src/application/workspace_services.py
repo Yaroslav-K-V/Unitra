@@ -178,6 +178,16 @@ class WorkspaceService:
             "ai_policy_source": config.ai_policy.source(),
         }
 
+    def save_ai_backend(self, provider: str, model: str, base_url: str = "") -> dict:
+        from src.application.workspace_models import AiBackendConfig
+        backend = AiBackendConfig(
+            provider=provider.strip().lower() or "ollama",
+            model=model.strip() or "llama3.2",
+            base_url=base_url.strip() or ("http://localhost:11434/v1/" if provider == "ollama" else ""),
+        )
+        self._repository.save_ai_backend(backend)
+        return {"provider": backend.provider, "model": backend.model, "base_url": backend.base_url}
+
     def save_ai_policy(self, global_policy: AiPolicy, inherit: bool, policy_values: Optional[dict] = None) -> dict:
         current = self._repository.load_config().ai_policy
         base = global_policy if current.inherit else current.policy

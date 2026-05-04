@@ -688,6 +688,44 @@ function renderWorkspaceAgentProfile(profile) {
         <div class="workspace-status-footer">
             ${(profile.roles_enabled || []).map(role => `<span class="workspace-pill workspace-pill-muted">${WorkspaceUi.escapeHtml(role)}</span>`).join("")}
         </div>
+        <div class="workspace-backend-edit-panel">
+            <button class="btn-ghost workspace-backend-edit-toggle" type="button" onclick="toggleBackendEditPanel(this)">
+                Edit backend
+            </button>
+            <div class="workspace-backend-edit-form" hidden>
+                <div class="workspace-backend-field">
+                    <label class="workspace-list-meta" for="ws-backend-provider">Provider</label>
+                    <select id="ws-backend-provider" class="settings-select" onchange="onBackendProviderChange()">
+                        <option value="ollama" ${(backend.provider||"ollama")==="ollama"?"selected":""}>Ollama (local)</option>
+                        <option value="openai" ${(backend.provider||"")==="openai"?"selected":""}>OpenAI</option>
+                        <option value="openrouter" ${(backend.provider||"")==="openrouter"?"selected":""}>OpenRouter</option>
+                    </select>
+                </div>
+                <div class="workspace-backend-field">
+                    <label class="workspace-list-meta" for="ws-backend-model">Model</label>
+                    <input id="ws-backend-model" class="settings-input" type="text"
+                        value="${WorkspaceUi.escapeHtml(backend.model || profile.model || "")}"
+                        placeholder="e.g. tencent/hunyuan-a13b-instruct:free"
+                        list="ws-backend-model-list">
+                    <datalist id="ws-backend-model-list">
+                        <option value="llama3.2">
+                        <option value="qwen2.5-coder:7b">
+                        <option value="gpt-4o-mini">
+                        <option value="gpt-5.4-mini">
+                        <option value="tencent/hunyuan-a13b-instruct:free">
+                        <option value="anthropic/claude-3.5-sonnet">
+                        <option value="openai/gpt-4o-mini">
+                    </datalist>
+                </div>
+                <div class="workspace-backend-field" id="ws-backend-url-row">
+                    <label class="workspace-list-meta" for="ws-backend-url">Base URL</label>
+                    <input id="ws-backend-url" class="settings-input" type="text"
+                        value="${WorkspaceUi.escapeHtml(backend.base_url || "http://localhost:11434/v1/")}"
+                        placeholder="http://localhost:11434/v1/">
+                </div>
+                <button class="btn-ghost" data-workspace-action type="button" onclick="saveWorkspaceBackend(this)">Save backend</button>
+            </div>
+        </div>
         <div class="workspace-ai-policy-panel">
             <div class="workspace-list-meta">Effective: generation ${WorkspaceUi.escapeHtml(effectivePolicy.ai_generation)}, repair ${WorkspaceUi.escapeHtml(effectivePolicy.ai_repair)}, explain ${WorkspaceUi.escapeHtml(effectivePolicy.ai_explain)}</div>
             <label class="settings-checkbox-row workspace-ai-policy-inherit">
@@ -755,6 +793,64 @@ async function saveWorkspaceAiPolicy(button = null) {
         await fetchWorkspaceAgentProfile(root, { force: true });
         await initializeWorkspace(root, { force: true, source: "policy" });
         showWorkspaceFeedback("success", "Workspace AI policy saved.");
+    } finally {
+        setWorkspaceBusy(button, false);
+    }
+}
+
+function toggleBackendEditPanel(btn) {
+    const form = btn?.closest(".workspace-backend-edit-panel")?.querySelector(".workspace-backend-edit-form");
+    if (!form) return;
+    const opening = form.hasAttribute("hidden");
+    form.hidden = !opening;
+    btn.textContent = opening ? "Hide" : "Edit backend";
+    if (opening) onBackendProviderChange();
+}
+
+function onBackendProviderChange() {
+    const provider = document.getElementById("ws-backend-provider")?.value || "ollama";
+    const urlRow = document.getElementById("ws-backend-url-row");
+    const modelInput = document.getElementById("ws-backend-model");
+    if (urlRow) urlRow.hidden = provider !== "ollama";
+    if (modelInput) {
+        const hints = {
+            ollama: "e.g. llama3.2 or qwen2.5-coder:7b",
+            openai: "e.g. gpt-4o-mini or gpt-5.4-mini",
+            openrouter: "e.g. tencent/hunyuan-a13b-instruct:free",
+        };
+        modelInput.placeholder = hints[provider] || "model id";
+    }
+}
+
+async function saveWorkspaceBackend(button = null) {
+    const root = window._workspaceRoot;
+    if (!root) {
+        showWorkspaceFeedback("error", "Open a workspace before changing the backend.");
+        return;
+    }
+    const provider = document.getElementById("ws-backend-provider")?.value || "ollama";
+    const model = document.getElementById("ws-backend-model")?.value?.trim() || "";
+    const base_url = document.getElementById("ws-backend-url")?.value?.trim() || "";
+    if (!model) {
+        showWorkspaceFeedback("error", "Enter a model name before saving.");
+        return;
+    }
+    setWorkspaceBusy(button, true, "Saving...");
+    clearWorkspaceFeedback();
+    try {
+        const result = await WorkspaceUi.fetchJson("/workspace/ai-backend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ root, provider, model, base_url }),
+        });
+        if (!result.ok) {
+            showWorkspaceFeedback("error", result.payload?.error || "Could not save backend.");
+            return;
+        }
+        invalidateWorkspaceUiCache(root);
+        window._workspaceBackend = result.payload;
+        await fetchWorkspaceAgentProfile(root, { force: true });
+        showWorkspaceFeedback("success", `Backend saved: ${provider} / ${model}`);
     } finally {
         setWorkspaceBusy(button, false);
     }
