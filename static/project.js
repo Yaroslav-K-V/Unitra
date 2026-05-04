@@ -689,10 +689,8 @@ function renderWorkspaceAgentProfile(profile) {
             ${(profile.roles_enabled || []).map(role => `<span class="workspace-pill workspace-pill-muted">${WorkspaceUi.escapeHtml(role)}</span>`).join("")}
         </div>
         <div class="workspace-backend-edit-panel">
-            <button class="btn-ghost workspace-backend-edit-toggle" type="button" onclick="toggleBackendEditPanel(this)">
-                Edit backend
-            </button>
-            <div class="workspace-backend-edit-form" hidden>
+            <button class="btn-ghost workspace-backend-edit-toggle" type="button" onclick="toggleBackendEditPanel(this)">Edit backend</button>
+            <div class="workspace-backend-edit-form">
                 <div class="workspace-backend-field">
                     <label class="workspace-list-meta" for="ws-backend-provider">Provider</label>
                     <select id="ws-backend-provider" class="settings-select" onchange="onBackendProviderChange()">
@@ -704,7 +702,7 @@ function renderWorkspaceAgentProfile(profile) {
                 <div class="workspace-backend-field">
                     <label class="workspace-list-meta" for="ws-backend-model">Model</label>
                     <input id="ws-backend-model" class="settings-input" type="text"
-                        value="${WorkspaceUi.escapeHtml(backend.model || profile.model || "")}"
+                        value="${WorkspaceUi.escapeHtml(backend.model || "")}"
                         placeholder="e.g. tencent/hunyuan-a13b-instruct:free"
                         list="ws-backend-model-list">
                     <datalist id="ws-backend-model-list">
@@ -722,6 +720,11 @@ function renderWorkspaceAgentProfile(profile) {
                     <input id="ws-backend-url" class="settings-input" type="text"
                         value="${WorkspaceUi.escapeHtml(backend.base_url || "http://localhost:11434/v1/")}"
                         placeholder="http://localhost:11434/v1/">
+                </div>
+                <div class="workspace-backend-field" id="ws-backend-key-row" style="display:none">
+                    <label class="workspace-list-meta" for="ws-backend-key">API key</label>
+                    <input id="ws-backend-key" class="settings-input" type="password"
+                        placeholder="Leave blank to keep existing key">
                 </div>
                 <button class="btn-ghost" data-workspace-action type="button" onclick="saveWorkspaceBackend(this)">Save backend</button>
             </div>
@@ -799,24 +802,36 @@ async function saveWorkspaceAiPolicy(button = null) {
 }
 
 function toggleBackendEditPanel(btn) {
-    const form = btn?.closest(".workspace-backend-edit-panel")?.querySelector(".workspace-backend-edit-form");
+    const panel = btn?.closest(".workspace-backend-edit-panel");
+    const form = panel?.querySelector(".workspace-backend-edit-form");
     if (!form) return;
-    const opening = form.hasAttribute("hidden");
-    form.hidden = !opening;
-    btn.textContent = opening ? "Hide" : "Edit backend";
-    if (opening) onBackendProviderChange();
+    const isOpen = panel.dataset.open === "1";
+    if (isOpen) {
+        panel.dataset.open = "0";
+        form.style.display = "none";
+        btn.textContent = "Edit backend";
+    } else {
+        panel.dataset.open = "1";
+        form.style.display = "flex";
+        btn.textContent = "Hide";
+        onBackendProviderChange();
+    }
 }
 
 function onBackendProviderChange() {
     const provider = document.getElementById("ws-backend-provider")?.value || "ollama";
-    const urlRow = document.getElementById("ws-backend-url-row");
+    const urlRow  = document.getElementById("ws-backend-url-row");
+    const keyRow  = document.getElementById("ws-backend-key-row");
     const modelInput = document.getElementById("ws-backend-model");
-    if (urlRow) urlRow.hidden = provider !== "ollama";
+
+    if (urlRow)  urlRow.style.display  = provider === "ollama" ? "flex" : "none";
+    if (keyRow)  keyRow.style.display  = provider !== "ollama" ? "flex" : "none";
+
     if (modelInput) {
         const hints = {
-            ollama: "e.g. llama3.2 or qwen2.5-coder:7b",
-            openai: "e.g. gpt-4o-mini or gpt-5.4-mini",
-            openrouter: "e.g. tencent/hunyuan-a13b-instruct:free",
+            ollama:      "e.g. llama3.2 or qwen2.5-coder:7b",
+            openai:      "e.g. gpt-4o-mini or gpt-5.4-mini",
+            openrouter:  "e.g. tencent/hunyuan-a13b-instruct:free",
         };
         modelInput.placeholder = hints[provider] || "model id";
     }
@@ -828,9 +843,11 @@ async function saveWorkspaceBackend(button = null) {
         showWorkspaceFeedback("error", "Open a workspace before changing the backend.");
         return;
     }
-    const provider = document.getElementById("ws-backend-provider")?.value || "ollama";
-    const model = document.getElementById("ws-backend-model")?.value?.trim() || "";
-    const base_url = document.getElementById("ws-backend-url")?.value?.trim() || "";
+    const provider  = document.getElementById("ws-backend-provider")?.value || "ollama";
+    const model     = document.getElementById("ws-backend-model")?.value?.trim() || "";
+    const base_url  = document.getElementById("ws-backend-url")?.value?.trim() || "";
+    const api_key   = document.getElementById("ws-backend-key")?.value?.trim() || "";
+
     if (!model) {
         showWorkspaceFeedback("error", "Enter a model name before saving.");
         return;
@@ -838,6 +855,7 @@ async function saveWorkspaceBackend(button = null) {
     setWorkspaceBusy(button, true, "Saving...");
     clearWorkspaceFeedback();
     try {
+        // 1. Save provider + model + base_url to workspace .unitra/unitra.toml
         const result = await WorkspaceUi.fetchJson("/workspace/ai-backend", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -847,9 +865,21 @@ async function saveWorkspaceBackend(button = null) {
             showWorkspaceFeedback("error", result.payload?.error || "Could not save backend.");
             return;
         }
+
+        // 2. If cloud provider and key entered, save it to global settings
+        if (provider !== "ollama" && api_key) {
+            await fetch("/settings/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ provider, api_key, model }),
+            });
+            document.getElementById("ws-backend-key").value = "";
+        }
+
+        // 3. Refresh UI
         invalidateWorkspaceUiCache(root);
-        window._workspaceBackend = result.payload;
-        await fetchWorkspaceAgentProfile(root, { force: true });
+        window._workspaceBackend = { ...result.payload };
+        await initializeWorkspace(root, { force: true, source: "backend-save" });
         showWorkspaceFeedback("success", `Backend saved: ${provider} / ${model}`);
     } finally {
         setWorkspaceBusy(button, false);
