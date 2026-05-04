@@ -124,17 +124,7 @@ async function generate() {
         }
 
         output.classList.remove("error");
-        // Syntax highlight if hljs is loaded, otherwise plain text
-        if (typeof hljs !== "undefined") {
-            output.innerHTML = "";
-            const codeEl = document.createElement("code");
-            codeEl.className = "language-python";
-            codeEl.textContent = data.test_code;
-            output.appendChild(codeEl);
-            hljs.highlightElement(codeEl);
-        } else {
-            output.textContent = data.test_code;
-        }
+        output.textContent = data.test_code;
         meta.textContent = `${data.functions_found} functions · ${data.classes_found} classes · ${data.tests_generated} tests`;
         if (typeof updateConftestButton === "function") updateConftestButton(data.conftest_code);
         setQuickState("draft-ready");

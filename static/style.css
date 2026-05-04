@@ -2175,44 +2175,6 @@ main {
     font-size: 13px;
 }
 
-/* ── Status bar ──────────────────────────────────────────────────── */
-.app-statusbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 16px;
-    height: 26px;
-    flex-shrink: 0;
-    background: var(--topbar-bg);
-    border-top: 1px solid var(--border);
-    font-size: 11px;
-    color: var(--text-faint);
-    font-family: var(--font-mono, "JetBrains Mono", monospace);
-    letter-spacing: 0.01em;
-}
-.statusbar-item { white-space: nowrap; }
-.statusbar-sep  { opacity: 0.4; }
-.statusbar-spacer { flex: 1; }
-.statusbar-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-faint);
-    font-size: 12px;
-    font-weight: 600;
-    width: 20px;
-    height: 20px;
-    border-radius: var(--r-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background var(--dur-fast, 100ms), color var(--dur-fast, 100ms);
-}
-.statusbar-btn:hover {
-    background: var(--btn-secondary-bg);
-    color: var(--text);
-}
-
 /* ── Keyboard shortcuts overlay ─────────────────────────────────── */
 .shortcuts-overlay {
     position: fixed;
@@ -2289,12 +2251,3 @@ main {
     margin: 0;
 }
 
-/* ── highlight.js overrides ─────────────────────────────────────── */
-#output .hljs,
-#output code.hljs {
-    background: transparent !important;
-    padding: 0 !important;
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
-}

@@ -7,7 +7,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <link rel="icon" href="/favicon.ico">
     <script src="/static/scripts/theme.js"></script>
     <script src="/static/scripts/brand-bubble.js"></script>
@@ -47,6 +46,12 @@
 
                 <div class="app-utilities">
                     <button id="theme-toggle" class="utility-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Switch to dark theme" aria-pressed="false">◐</button>
+                    <button class="utility-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 15V14c1.657 0 3-1.12 3-2.5S13.657 9 12 9s-3 1.12-3 2.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75"/>
+                        </svg>
+                    </button>
                     <button class="utility-btn" onclick="maximizeAppWindow()" title="Maximize window" aria-label="Maximize window">
                         <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M6 6.75H18V17.25H6V6.75Z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
@@ -66,14 +71,6 @@
                 {% block content %}{% endblock %}
             </div>
         </div>
-
-        <footer class="app-statusbar" aria-label="Status bar">
-            <span class="statusbar-item">v{{ app_version }}</span>
-            <span class="statusbar-sep">·</span>
-            <span class="statusbar-item">AI: {{ ai_provider }}</span>
-            <span class="statusbar-spacer"></span>
-            <button class="statusbar-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)">?</button>
-        </footer>
     </div>
 
     <div id="shortcuts-overlay" class="shortcuts-overlay" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
@@ -93,8 +90,6 @@
     </div>
 
     {% block scripts %}{% endblock %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js" defer></script>
     <script src="/static/scripts/shortcuts.js" defer></script>
 </body>
 </html>
