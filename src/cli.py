@@ -9,8 +9,7 @@ from src.application.ai_policy import AiPolicy
 from src.application.exceptions import DependencyError, ValidationError
 from src.application.models import RunTestsRequest, SaveSettingsRequest
 from src.application.workspace_models import TestTarget
-from src.config import load_config
-from src.container import build_container, get_container
+from src.container import container_for_root, get_container, normalize_workspace_root
 from src.serializers import (
     serialize_ai_policy,
     serialize_agent_profile,
@@ -766,12 +765,11 @@ def _job_command_success(command: str, result, workspace_root: str, model: str, 
 
 
 def _container_for_root(root: str):
-    normalized = _workspace_root(root)
-    return build_container(load_config(root_path=normalized))
+    return container_for_root(root)
 
 
 def _workspace_root(root: str) -> str:
-    return os.path.abspath(root or ".")
+    return normalize_workspace_root(root)
 
 
 def _should_write(args) -> bool:

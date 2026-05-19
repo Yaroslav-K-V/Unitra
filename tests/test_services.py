@@ -257,8 +257,8 @@ def test_load_config_reads_settings_json_after_legacy_env(tmp_path, monkeypatch)
 
 
 def test_load_config_defaults_to_ollama(tmp_path, monkeypatch):
-    monkeypatch.delenv("AI_PROVIDER", raising=False)
-    monkeypatch.delenv("AI_MODEL", raising=False)
+    for name in ("AI_PROVIDER", "AI_MODEL", "OPENAI_MODEL", "OLLAMA_MODEL", "UNITRA_SETTINGS_PATH"):
+        monkeypatch.delenv(name, raising=False)
     config = load_config(root_path=str(tmp_path))
     assert config.ai_provider == "ollama"
     assert config.ai_model == "llama3.2"

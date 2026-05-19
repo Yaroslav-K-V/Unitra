@@ -241,13 +241,13 @@ class StubContainer:
                 },
             )()
 
-        def generate_tests(self, target, write=False):
+        def generate_tests(self, target, write=False, use_ai_generation=False):
             return self.run_job("ad-hoc-generate")
 
-        def update_tests(self, target, write=False):
+        def update_tests(self, target, write=False, use_ai_generation=False):
             return self.run_job("ad-hoc-update")
 
-        def fix_failed_tests(self, target, write=False):
+        def fix_failed_tests(self, target, write=False, use_ai_generation=False, use_ai_repair=False):
             return self.run_job("ad-hoc-fix")
 
     class Guided:
@@ -331,6 +331,42 @@ def test_run_tests_route_uses_service(monkeypatch):
     response = client.post("/run-tests", json={"test_code": "def test_x(): pass"})
     assert response.status_code == 200
     assert response.get_json()["output"] == "done"
+
+
+def test_run_tests_rejects_system_source_folder(monkeypatch):
+    import routes.runner as runner_module
+
+    monkeypatch.setattr(runner_module, "get_container", lambda: StubContainer())
+    client = _build_app().test_client()
+    for bad in ["/etc", "/etc/", "/etc/ssh", "/usr/bin", "/bin", "/sbin"]:
+        response = client.post("/run-tests", json={"test_code": "def test_x(): pass", "source_folder": bad})
+        assert response.status_code == 400, bad
+        assert "protected system path" in response.get_json()["error"]
+
+
+def test_run_tests_rejects_nonexistent_source_folder(monkeypatch):
+    import routes.runner as runner_module
+
+    monkeypatch.setattr(runner_module, "get_container", lambda: StubContainer())
+    client = _build_app().test_client()
+    response = client.post(
+        "/run-tests",
+        json={"test_code": "def test_x(): pass", "source_folder": "/tmp/__definitely_not_a_dir_xyz_987"},
+    )
+    assert response.status_code == 400
+    assert "not a directory" in response.get_json()["error"]
+
+
+def test_run_tests_accepts_valid_source_folder(monkeypatch, tmp_path):
+    import routes.runner as runner_module
+
+    monkeypatch.setattr(runner_module, "get_container", lambda: StubContainer())
+    client = _build_app().test_client()
+    response = client.post(
+        "/run-tests",
+        json={"test_code": "def test_x(): pass", "source_folder": str(tmp_path)},
+    )
+    assert response.status_code == 200
 
 
 def test_workspace_status_route_uses_service(monkeypatch):
@@ -547,57 +583,14 @@ def test_ai_redirects_to_workspace():
     assert response.headers["Location"].endswith("/workspace")
 
 
-def test_home_page_exposes_command_center_targets():
+def test_all_page_routes_serve_prototype_spa():
     client = _build_app().test_client()
-    response = client.get("/")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="home-screen"' in html
-    assert "Start with code. Stay close to the tests." in html
-    assert 'href="/quick"' in html
-    assert 'href="/workspace"' in html
-    assert "/static/scripts/workspace-shared.js" in html
-
-
-def test_quick_page_exposes_pipeline_workbench_targets():
-    client = _build_app().test_client()
-    response = client.get("/quick")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="quick-workbench"' in html
-    assert 'data-quick-state="idle"' in html
-    assert 'id="code"' in html
-    assert 'id="output"' in html
-    assert 'id="run-result"' in html
-    assert 'id="btn-run"' in html
-    assert "/static/main.js" in html
-
-
-def test_workspace_page_exposes_feedback_and_workspace_panels():
-    client = _build_app().test_client()
-    response = client.get("/workspace")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'id="workspace-feedback"' in html
-    assert 'id="workspace-agent-profile"' in html
-    assert 'id="workspace-runs"' in html
-    assert "data-workspace-action" in html
-
-
-def test_dashboard_page_exposes_workspace_panels():
-    client = _build_app().test_client()
-    response = client.get("/dashboard")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert 'class="dashboard-screen"' in html
-    assert 'data-desktop-view="generate"' in html
-    assert 'id="desktop-open-root"' in html
-    assert 'id="desktop-diff-preview"' in html
-    assert "/static/desktop.js" in html
+    for path in ["/", "/home", "/quick", "/workspace", "/dashboard", "/info", "/settings"]:
+        response = client.get(path)
+        html = response.get_data(as_text=True)
+        assert response.status_code == 200, path
+        assert '<div id="root">' in html, path
+        assert "/static/ui/dist/bundle.js" in html, path
 
 
 def test_workspace_dashboard_route_uses_service(monkeypatch):
@@ -631,45 +624,25 @@ def test_desktop_state_route_uses_service(monkeypatch):
     assert "metrics" in payload
 
 
-def test_info_page_exposes_start_guide_paths():
-    client = _build_app().test_client()
-    response = client.get("/info")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    assert "Start guide" in html
-    assert "What do you want to do right now?" in html
-    assert "Open Quick" in html
-    assert "Open Workspace" in html
-    assert "Local-first" in html
-    assert "Where config lives" in html
-
-
 def test_workspace_container_cache_reuses_container(monkeypatch):
     import routes.workspace as workspace_module
 
     workspace_module._CONTAINER_CACHE.clear()
     workspace_module._PAYLOAD_CACHE.clear()
 
-    calls = {"load_config": 0, "build_container": 0}
+    calls = {"build": 0}
 
-    def fake_load_config(root_path="."):
-        calls["load_config"] += 1
-        return {"root": root_path}
+    def fake_build(root):
+        calls["build"] += 1
+        return {"root": root}
 
-    def fake_build_container(config):
-        calls["build_container"] += 1
-        return {"config": config}
-
-    monkeypatch.setattr(workspace_module, "load_config", fake_load_config)
-    monkeypatch.setattr(workspace_module, "build_container", fake_build_container)
+    monkeypatch.setattr(workspace_module, "_build_root_container", fake_build)
 
     first = workspace_module._container_for_root("/tmp/project")
     second = workspace_module._container_for_root("/tmp/project")
 
     assert first == second
-    assert calls["load_config"] == 1
-    assert calls["build_container"] == 1
+    assert calls["build"] == 1
 
 
 def test_workspace_status_payload_cache_hits_factory_once(monkeypatch):

@@ -1,13 +1,16 @@
+import logging
 import os
 import threading
 
 from flask import Blueprint, jsonify, request
 
+log = logging.getLogger(__name__)
+
 from src.application.exceptions import DependencyError, ValidationError
 from src.application.ai_policy import AiPolicy
 from src.application.workspace_models import TestTarget
-from src.config import APP_ROOT, load_config
-from src.container import build_container
+from src.config import APP_ROOT
+from src.container import container_for_root as _build_root_container, normalize_workspace_root
 from src.serializers import (
     serialize_ai_policy,
     serialize_agent_profile,
@@ -25,7 +28,7 @@ _PAYLOAD_CACHE = {}
 
 
 def _normalize_root(root_path: str) -> str:
-    return os.path.abspath(root_path or ".")
+    return normalize_workspace_root(root_path)
 
 
 def _workspace_signature(root_path: str) -> tuple:
@@ -53,6 +56,8 @@ def _invalidate_workspace_cache(root_path: str) -> None:
 
 
 def _container_for_root(root_path: str):
+    """Cached per-root container. Cache is invalidated when relevant config
+    files change (see ``_workspace_signature``)."""
     root = _normalize_root(root_path)
     signature = _workspace_signature(root)
     with _CACHE_LOCK:
@@ -61,7 +66,7 @@ def _container_for_root(root_path: str):
             cached_signature, cached_container = cached
             if cached_signature == signature:
                 return cached_container
-        container = build_container(load_config(root_path=root))
+        container = _build_root_container(root)
         _CONTAINER_CACHE[root] = (signature, container)
         return container
 
@@ -321,30 +326,17 @@ def workspace_ai_policy_save():
 def workspace_job_run():
     body = request.get_json()
     root = body.get("root", ".")
+    job_name = body.get("name", "")
+    log.info("workspace job run: job=%r root=%r", job_name, root)
     try:
         jobs = _container_for_root(root).jobs
-        try:
-            result = jobs.run_job(
-                body.get("name", ""),
-                target_value=body.get("target", ""),
-                output_policy=body.get("output_policy", ""),
-                use_ai_generation=bool(body.get("use_ai_generation", False)),
-                use_ai_repair=bool(body.get("use_ai_repair", False)),
-            )
-        except TypeError:
-            try:
-                result = jobs.run_job(
-                    body.get("name", ""),
-                    target_value=body.get("target", ""),
-                    output_policy=body.get("output_policy", ""),
-                    use_ai_generation=bool(body.get("use_ai_generation", False)),
-                )
-            except TypeError:
-                result = jobs.run_job(
-                    body.get("name", ""),
-                    target_value=body.get("target", ""),
-                    output_policy=body.get("output_policy", ""),
-                )
+        result = jobs.run_job(
+            body.get("name", ""),
+            target_value=body.get("target", ""),
+            output_policy=body.get("output_policy", ""),
+            use_ai_generation=bool(body.get("use_ai_generation", False)),
+            use_ai_repair=bool(body.get("use_ai_repair", False)),
+        )
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     except DependencyError as exc:
@@ -352,6 +344,8 @@ def workspace_job_run():
     except TimeoutError as exc:
         return jsonify({"error": str(exc)}), 408
     _invalidate_workspace_cache(root)
+    rc = getattr(getattr(result, "run", None), "returncode", None)
+    log.info("workspace job run: job=%r done returncode=%s", job_name, rc)
     return jsonify(_job_payload(result))
 
 
@@ -458,32 +452,16 @@ def _workspace_test_action(action: str):
     jobs = _container_for_root(root).jobs
     try:
         if action == "generate":
-            try:
-                result = jobs.generate_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
-            except TypeError:
-                result = jobs.generate_tests(target, write=write)
+            result = jobs.generate_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
         elif action == "update":
-            try:
-                result = jobs.update_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
-            except TypeError:
-                result = jobs.update_tests(target, write=write)
+            result = jobs.update_tests(target, write=write, use_ai_generation=bool(body.get("use_ai_generation", False)))
         else:
-            try:
-                result = jobs.fix_failed_tests(
-                    target,
-                    write=write,
-                    use_ai_generation=bool(body.get("use_ai_generation", False)),
-                    use_ai_repair=bool(body.get("use_ai_repair", False)),
-                )
-            except TypeError:
-                try:
-                    result = jobs.fix_failed_tests(
-                        target,
-                        write=write,
-                        use_ai_generation=bool(body.get("use_ai_generation", False)),
-                    )
-                except TypeError:
-                    result = jobs.fix_failed_tests(target, write=write)
+            result = jobs.fix_failed_tests(
+                target,
+                write=write,
+                use_ai_generation=bool(body.get("use_ai_generation", False)),
+                use_ai_repair=bool(body.get("use_ai_repair", False)),
+            )
     except ValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     except DependencyError as exc:

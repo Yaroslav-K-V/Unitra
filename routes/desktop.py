@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from statistics import mean
 
 from flask import Blueprint, jsonify, request
+
+log = logging.getLogger(__name__)
 
 from src.application.ai_policy import AiPolicy
 from src.application.exceptions import ValidationError
@@ -67,7 +70,9 @@ def desktop_start_task():
     body = request.get_json()
     root = body.get("root", ".")
     kind = body.get("kind", "generate")
+    log.info("desktop task start: kind=%s root=%r scope=%s", kind, root, body.get("scope", "repo"))
     task_id = _TASKS.start(kind=kind, label=_task_label(kind), worker=lambda progress: _run_desktop_task(body, progress))
+    log.info("desktop task queued: task_id=%s", task_id)
     return jsonify({"task_id": task_id})
 
 
@@ -87,6 +92,7 @@ def desktop_settings():
 @desktop_bp.route("/api/desktop/settings", methods=["POST"])
 def desktop_settings_save():
     body = request.get_json()
+    log.info("desktop settings save: provider=%s model=%s", body.get("provider", ""), body.get("model", ""))
     try:
         result = get_container().settings.save_settings(
             SaveSettingsRequest(
@@ -98,8 +104,10 @@ def desktop_settings_save():
             )
         )
     except ValidationError as exc:
+        log.warning("desktop settings save: validation error — %s", exc)
         return jsonify({"error": str(exc)}), 400
     reset_container()
+    log.info("desktop settings save: OK provider=%s", result.provider)
     return jsonify(
         {
             "ok": result.saved,

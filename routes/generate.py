@@ -51,10 +51,19 @@ def scan_count():
 @generate_bp.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()
+    code = data.get("code", "")
+    log.info("generate: %d chars of source code", len(code))
     try:
-        result = get_container().generation.generate_from_code(data.get("code", ""))
+        result = get_container().generation.generate_from_code(code)
     except ValidationError as exc:
+        log.warning("generate: validation error — %s", exc)
         return jsonify({"error": str(exc)}), 400
+    log.info(
+        "generate: OK — %d function(s), %d class(es), %d test(s)",
+        getattr(result, "functions_found", 0),
+        getattr(result, "classes_found", 0),
+        getattr(result, "tests_generated", 0),
+    )
     return jsonify(result.__dict__)
 
 
@@ -79,6 +88,7 @@ def generate_project():
 @generate_bp.route("/settings/save", methods=["POST"])
 def settings_save():
     body = request.get_json()
+    log.info("settings/save: provider=%s model=%s", body.get("provider", ""), body.get("model", ""))
     try:
         result = get_container().settings.save_settings(
             SaveSettingsRequest(
@@ -91,7 +101,9 @@ def settings_save():
         )
         reset_container()
     except ValidationError as exc:
+        log.warning("settings/save: validation error — %s", exc)
         return jsonify({"error": str(exc)}), 400
+    log.info("settings/save: saved OK (provider=%s)", result.provider)
     return jsonify({
         "ok": result.saved,
         "provider": result.provider,

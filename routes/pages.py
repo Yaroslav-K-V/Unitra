@@ -1,8 +1,8 @@
+import logging
 import os
-from flask import Blueprint, jsonify, redirect, render_template, send_file, current_app
-from src.config import load_config
-from src.ui.styles import web_css_variables
+from flask import Blueprint, jsonify, redirect, send_file, current_app
 
+log = logging.getLogger(__name__)
 pages_bp = Blueprint("pages", __name__)
 
 try:
@@ -12,27 +12,55 @@ except Exception:
     _APP_VERSION = "0.1.0"
 
 
-def _page_context(active_page: str, **extra):
-    config = load_config(root_path=current_app.root_path)
-    context = {
-        "active_page": active_page,
-        "show_hints": config.show_hints,
-        "ui_css_vars": web_css_variables(),
-        "app_version": _APP_VERSION,
-        "ai_provider": config.ai_provider,
-    }
-    context.update(extra)
-    return context
+_UI_DIR = ("static", "ui")
+_BUNDLE_PARTS = ("dist", "bundle.js")
+_JSX_FILES = (
+    "shared.jsx", "screens.jsx", "console.jsx",
+    "flow-icons.jsx", "flow-data.jsx", "flow-history.jsx",
+    "flow-library.jsx", "flow-templates.jsx", "flow-codeeditor.jsx",
+    "flow-canvas.jsx", "flow-inspector.jsx", "flow-app.jsx",
+    "prototype-v2.jsx",
+)
+_STALE_WARNED = False
+
+
+def _bundle_staleness() -> str:
+    """Return name of the .jsx that's newer than bundle.js, or '' if up-to-date."""
+    base = os.path.join(current_app.root_path, *_UI_DIR)
+    bundle = os.path.join(base, *_BUNDLE_PARTS)
+    try:
+        bundle_mtime = os.path.getmtime(bundle)
+    except OSError:
+        return "(bundle missing)"
+    for name in _JSX_FILES:
+        try:
+            if os.path.getmtime(os.path.join(base, name)) > bundle_mtime:
+                return name
+        except OSError:
+            continue
+    return ""
+
+
+def _serve_ui():
+    global _STALE_WARNED
+    stale = _bundle_staleness()
+    if stale and not _STALE_WARNED:
+        log.warning("UI bundle stale (%s) — run: npm run build:ui", stale)
+        _STALE_WARNED = True
+    response = current_app.make_response(send_file(os.path.join(current_app.root_path, *_UI_DIR, "index.html")))
+    if stale:
+        response.headers["X-Unitra-Bundle-Stale"] = stale
+    return response
 
 
 @pages_bp.route("/health")
 def health():
-    return jsonify({"ok": True})
-
-
-@pages_bp.route("/loading")
-def loading():
-    return render_template("loading.html")
+    stale = _bundle_staleness()
+    return jsonify({
+        "ok": True,
+        "version": _APP_VERSION,
+        "bundle_stale": stale or None,
+    })
 
 
 @pages_bp.route("/favicon.ico")
@@ -41,18 +69,14 @@ def favicon():
 
 
 @pages_bp.route("/")
-def home():
-    return render_template("home.html", **_page_context("home"))
-
-
-@pages_bp.route("/dashboard")
-def dashboard():
-    return render_template("pages/dashboard.html", **_page_context("dashboard"))
-
-
+@pages_bp.route("/home")
 @pages_bp.route("/quick")
-def quick():
-    return render_template("quick.html", **_page_context("quick"))
+@pages_bp.route("/workspace")
+@pages_bp.route("/dashboard")
+@pages_bp.route("/info")
+@pages_bp.route("/settings")
+def page():
+    return _serve_ui()
 
 
 @pages_bp.route("/project")
@@ -60,38 +84,6 @@ def project():
     return redirect("/workspace")
 
 
-@pages_bp.route("/workspace")
-def workspace():
-    return render_template("workspace.html", **_page_context("workspace"))
-
-
-@pages_bp.route("/info")
-def info():
-    return render_template("info.html", **_page_context("info"))
-
-
 @pages_bp.route("/ai")
 def ai():
     return redirect("/workspace")
-
-
-@pages_bp.route("/settings")
-def settings():
-    from src.container import get_container
-
-    config = load_config(root_path=current_app.root_path)
-    settings_result = get_container().settings.load_settings()
-    return render_template(
-        "settings.html",
-        **_page_context(
-            "settings",
-            current_provider=settings_result.provider or config.ai_provider,
-            api_key_set=settings_result.api_key_set,
-            openai_api_key_set=settings_result.openai_api_key_set,
-            openrouter_api_key_set=settings_result.openrouter_api_key_set,
-            ollama_api_key_set=settings_result.ollama_api_key_set,
-            current_model=settings_result.model or config.ai_model,
-            current_show_hints=settings_result.show_hints,
-            current_ai_policy=settings_result.ai_policy.to_dict(),
-        ),
-    )

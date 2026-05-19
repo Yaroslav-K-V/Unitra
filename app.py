@@ -4,10 +4,27 @@ import subprocess
 import sys
 import threading
 import time
+from logging.handlers import RotatingFileHandler
+
+_LOG_DIR = os.path.join(os.path.dirname(__file__), "data")
+_LOG_FILE = os.path.join(_LOG_DIR, "unitra.log")
+
+_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setFormatter(_fmt)
+
+_file_handler = RotatingFileHandler(
+    _LOG_FILE,
+    maxBytes=2 * 1024 * 1024,   # 2 MB per file
+    backupCount=3,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(_fmt)
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[_console_handler, _file_handler],
 )
 log = logging.getLogger(__name__)
 
@@ -29,6 +46,7 @@ from routes.desktop import desktop_bp
 from routes.generate import generate_bp
 from routes.runner   import runner_bp
 from routes.workspace import workspace_bp
+from routes.flow_history import flow_history_bp
 from src.api import Api
 from src.config import load_config
 import webview
@@ -41,6 +59,7 @@ def create_app() -> Flask:
     flask_app.register_blueprint(generate_bp)
     flask_app.register_blueprint(runner_bp)
     flask_app.register_blueprint(workspace_bp)
+    flask_app.register_blueprint(flow_history_bp)
     return flask_app
 
 

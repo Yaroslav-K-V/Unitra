@@ -160,20 +160,13 @@ class SettingsService:
         )
 
     def save_settings(self, request: SaveSettingsRequest) -> SettingsResult:
-        try:
-            saved = self._repository.save(
-                provider=request.provider,
-                api_key=request.api_key,
-                model=request.model,
-                show_hints=request.show_hints,
-                ai_policy=request.ai_policy,
-            )
-        except TypeError:
-            saved = self._repository.save(
-                api_key=request.api_key,
-                model=request.model,
-                show_hints=request.show_hints,
-            )
+        saved = self._repository.save(
+            provider=request.provider,
+            api_key=request.api_key,
+            model=request.model,
+            show_hints=request.show_hints,
+            ai_policy=request.ai_policy,
+        )
         provider = str(saved.get("AI_PROVIDER", request.provider or "ollama") or "ollama")
         openai_api_key_set = bool(saved.get("OPENAI_API_KEY") or saved.get("API_KEY"))
         openrouter_api_key_set = bool(saved.get("OPENROUTER_API_KEY"))

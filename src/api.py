@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+
 import webview
 
 
@@ -61,3 +64,27 @@ class Api:
         if not result:
             return None
         return result[0]
+
+    def reveal_in_finder(self, path: str):
+        """Open the given file or directory in the OS file browser.
+
+        Returns dict {ok, path, error?}. Safe-no-op if path doesn't exist.
+        """
+        if not path or not isinstance(path, str):
+            return {"ok": False, "error": "no path provided"}
+        if not os.path.exists(path):
+            return {"ok": False, "error": f"path does not exist: {path}"}
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", "-R" if os.path.isfile(path) else path] + ([path] if os.path.isfile(path) else []), check=False)
+            elif sys.platform == "win32":
+                if os.path.isfile(path):
+                    subprocess.run(["explorer", "/select,", path], check=False)
+                else:
+                    subprocess.run(["explorer", path], check=False)
+            else:
+                target = path if os.path.isdir(path) else os.path.dirname(path)
+                subprocess.run(["xdg-open", target], check=False)
+            return {"ok": True, "path": path}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}

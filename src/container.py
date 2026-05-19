@@ -1,3 +1,21 @@
+"""Service container assembly.
+
+Two scopes are intentional and serve different purposes:
+
+* ``get_container()`` — module-level singleton built from the *default* config
+  (root = APP_ROOT). Use it for GLOBAL operations: app-wide settings, recent
+  files, ad-hoc generation/run-tests requests that aren't tied to a workspace.
+
+* ``container_for_root(root)`` — fresh container built for a specific workspace
+  root. Use it for PER-WORKSPACE operations: jobs, guided runs, agent profiles,
+  workspace status. The route layer (routes/workspace.py) wraps this with an
+  mtime-based cache; the CLI calls it directly.
+
+Don't try to consolidate the two — they read different `.env` / `.unitra/`
+trees and ``SettingsService`` state diverges intentionally between them.
+"""
+
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -139,3 +157,13 @@ def get_container() -> ServiceContainer:
 def reset_container() -> None:
     global _container
     _container = None
+
+
+def normalize_workspace_root(root: str) -> str:
+    """Canonical absolute path for a workspace root argument."""
+    return os.path.abspath(root or ".")
+
+
+def container_for_root(root: str) -> ServiceContainer:
+    """Build a fresh container scoped to a workspace root. No caching."""
+    return build_container(load_config(root_path=normalize_workspace_root(root)))

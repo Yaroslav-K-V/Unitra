@@ -1,0 +1,14 @@
+{
+  "name": "unitra-prototype-build",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:ui": "node static/ui/build.mjs",
+    "watch:ui": "node static/ui/build.mjs --watch",
+    "check:ui": "node static/ui/build.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
